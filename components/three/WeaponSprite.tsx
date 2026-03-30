@@ -83,13 +83,21 @@ export default function WeaponSprite({ weapon, isActive, fadeOut, isSocialChapte
     )
   }, [weapon.texture])
 
+  // 1x1 fully-transparent fallback — avoids sampling an uninitialized texture
+  // on Intel WebGL drivers, which can corrupt the shader state permanently
+  const fallbackTexture = useMemo(() => {
+    const tex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1)
+    tex.needsUpdate = true
+    return tex
+  }, [])
+
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
       uActive: { value: 0 },
       uVisibility: { value: 1 },
       uTint: { value: new THREE.Vector3(...weapon.tint) },
-      uTexture: { value: texture ?? new THREE.Texture() },
+      uTexture: { value: fallbackTexture },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [weapon.tint]
