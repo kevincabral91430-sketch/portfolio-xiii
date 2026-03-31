@@ -19,19 +19,23 @@ uniform vec3 uColor;
 varying vec2 vUv;
 
 void main() {
-  // Vertical beam shape — soft gaussian column
   float dx = vUv.x - 0.5;
-  float beam = exp(-dx * dx * 22.0);
 
-  // Fade top and bottom
-  float fadeY = smoothstep(0.0, 0.18, vUv.y) * smoothstep(1.0, 0.7, vUv.y);
+  // Organic width variation over time
+  float widthMod = 1.0 + sin(uTime * 0.11 + uPhase) * 0.18;
+  float beam     = exp(-dx * dx * 20.0 * widthMod);
 
-  // Slow undulation along the beam
-  float ripple = sin(vUv.y * 6.0 - uTime * 0.4 + uPhase) * 0.5 + 0.5;
-  float energy = beam * fadeY * (0.55 + ripple * 0.45);
+  // Brighter inner core — creates depth inside the nappe
+  float core = exp(-dx * dx * 75.0 * widthMod);
 
-  // Very low opacity — purely atmospheric
-  float alpha = energy * 0.07;
+  // Top & bottom fade — gentle, not harsh
+  float fadeY = smoothstep(0.0, 0.16, vUv.y) * smoothstep(1.0, 0.72, vUv.y);
+
+  // Slow undulation along height
+  float ripple = sin(vUv.y * 5.5 - uTime * 0.36 + uPhase) * 0.5 + 0.5;
+  float energy = (beam * 0.82 + core * 0.18) * fadeY * (0.48 + ripple * 0.52);
+
+  float alpha = energy * 0.062;
   gl_FragColor = vec4(uColor, alpha);
 }
 `
@@ -44,42 +48,41 @@ interface NappeData {
   phase: number
 }
 
-// 5 nappes spread around the scene — never clustered, always subtle
 const NAPPES: NappeData[] = [
   {
-    position: [-8, 4, -18],
-    rotation: [0, 0.3, 0],
-    scale: [6, 28, 1],
-    color: new THREE.Vector3(0.0, 0.55, 0.85),
-    phase: 0.0,
+    position: [-8,   4, -18],
+    rotation: [0,  0.3, 0],
+    scale:    [6,  28,  1],
+    color:    new THREE.Vector3(0.0, 0.52, 0.82),
+    phase:    0.0,
   },
   {
-    position: [10, 2, -22],
+    position: [10,  2, -22],
     rotation: [0, -0.2, 0],
-    scale: [5, 24, 1],
-    color: new THREE.Vector3(0.1, 0.4, 0.9),
-    phase: 1.8,
+    scale:    [5, 24,   1],
+    color:    new THREE.Vector3(0.08, 0.38, 0.88),
+    phase:    1.8,
   },
   {
-    position: [0, -2, -20],
-    rotation: [0, 0, 0],
-    scale: [7, 30, 1],
-    color: new THREE.Vector3(0.0, 0.6, 0.75),
-    phase: 3.2,
+    position: [0,  -2, -20],
+    rotation: [0,   0, 0],
+    scale:    [7,  30,  1],
+    color:    new THREE.Vector3(0.0, 0.58, 0.72),
+    phase:    3.2,
   },
   {
     position: [-14, 0, -16],
     rotation: [0, 0.5, 0],
-    scale: [4, 20, 1],
-    color: new THREE.Vector3(0.05, 0.35, 0.7),
-    phase: 4.7,
+    scale:    [4, 20,  1],
+    color:    new THREE.Vector3(0.04, 0.32, 0.68),
+    phase:    4.7,
   },
   {
     position: [16, -4, -19],
     rotation: [0, -0.4, 0],
-    scale: [5, 22, 1],
-    color: new THREE.Vector3(0.0, 0.5, 0.8),
-    phase: 2.1,
+    scale:    [5,  22,  1],
+    color:    new THREE.Vector3(0.0, 0.48, 0.78),
+    phase:    2.1,
   },
 ]
 
@@ -89,14 +92,14 @@ export default function LightNappes() {
   const uniformsArray = useMemo(
     () =>
       NAPPES.map((n) => ({
-        uTime: { value: 0 },
+        uTime:  { value: 0 },
         uPhase: { value: n.phase },
         uColor: { value: n.color },
       })),
     []
   )
 
-  // Single useFrame for all nappes — avoids 5 separate frame callbacks
+  // Single useFrame for all nappes
   useFrame((state) => {
     const t = state.clock.elapsedTime
     for (let i = 0; i < NAPPES.length; i++) {
@@ -104,7 +107,8 @@ export default function LightNappes() {
       if (!mesh) continue
       const mat = mesh.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
-      mesh.position.y = NAPPES[i].position[1] + Math.sin(t * 0.08 + NAPPES[i].phase) * 1.2
+      // Gentle vertical drift — reduced amplitude (was 1.2)
+      mesh.position.y = NAPPES[i].position[1] + Math.sin(t * 0.075 + NAPPES[i].phase) * 0.9
     }
   })
 

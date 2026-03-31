@@ -5,17 +5,27 @@ import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 import type { Weapon } from "@/lib/three/weaponData"
 
+// Depth-aware vertex shader — computes fog factor in view space
 const vertexShader = `
 uniform float uTime;
 uniform float uActive;
 varying vec2 vUv;
+varying float vFogFactor;
 
 void main() {
   vUv = uv;
   vec3 pos = position;
-  float pulseMag = sin(uTime * 2.0) * 0.012 * uActive;
+
+  // Subtle heartbeat pulse — reduced amplitude
+  float pulseMag = sin(uTime * 1.8) * 0.006 * uActive;
   pos *= 1.0 + pulseMag;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+
+  vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+
+  // Fog factor from view-space depth (matches scene fog: near=35, far=100)
+  float depth = -mvPosition.z;
+  vFogFactor = clamp((depth - 35.0) / (100.0 - 35.0), 0.0, 1.0);
 }
 `
 
@@ -23,40 +33,65 @@ const fragmentShader = `
 uniform float uTime;
 uniform float uActive;
 uniform float uVisibility;
+uniform float uIntro;
 uniform vec3 uTint;
 uniform sampler2D uTexture;
 varying vec2 vUv;
+varying float vFogFactor;
 
 void main() {
   vec4 texColor = texture2D(uTexture, vUv);
   if (texColor.a < 0.05) discard;
 
   vec3 baseColor = texColor.rgb;
-
-  // Subtle tint — preserve original texture detail
-  vec3 tintedColor = mix(baseColor, uTint, 0.08 + uActive * 0.07);
-
   vec2 centeredUv = vUv - 0.5;
   float edgeDist = length(centeredUv);
 
-  // Soft aquatic rim — tinted, never white
-  float rim = smoothstep(0.2, 0.5, edgeDist);
-  vec3 rimColor = uTint * rim * uActive * 0.28;
+  // --- Base — minimal tint, preserve artwork ---
+  vec3 tintedColor = mix(baseColor, uTint, 0.055 + uActive * 0.055);
 
-  // Inner energy shimmer — very fine, FFX-spirit feel
-  float shimmerWave = sin(vUv.y * 10.0 - uTime * 2.0) * 0.5 + 0.5;
-  float shimmer = shimmerWave * uActive * 0.04 * max(0.0, 1.0 - edgeDist * 2.2);
+  // --- Vertical depth gradient — bottom slightly darker (grounds the weapon) ---
+  float groundShadow = 0.78 + vUv.y * 0.22;
+  tintedColor *= groundShadow;
 
-  // Slow diffuse pulse — warm halo, not a strobe
-  float pulse = sin(uTime * 1.2) * 0.5 + 0.5;
-  vec3 halo = uTint * uActive * pulse * 0.12;
+  // --- Caustic light shimmer (FFX ocean floor refraction) ---
+  float cx = sin(vUv.x * 9.5 + uTime * 0.62) * 0.5 + 0.5;
+  float cy = cos(vUv.y * 7.2 - uTime * 0.51 + 1.4) * 0.5 + 0.5;
+  float causticCore = max(0.0, 1.0 - edgeDist * 2.6) * texColor.a;
+  vec3 caustic = uTint * cx * cy * causticCore * uActive * 0.028;
 
-  vec3 finalColor = tintedColor + rimColor + shimmer + halo;
+  // --- Fresnel edge glow (integrates with environment) ---
+  float fresnel = pow(smoothstep(0.05, 0.46, edgeDist), 1.6);
+  vec3 fresnelGlow = uTint * fresnel * uActive * 0.16;
 
-  // Gentle luminosity lift on active — no clipping to white
-  finalColor = mix(finalColor, finalColor * 1.08, uActive * 0.6);
+  // --- Energy shimmer lines (spirit energy, FFX-feel) ---
+  float shimmerWave = sin(vUv.y * 14.0 - uTime * 1.55) * 0.5 + 0.5;
+  float shimmerMask = max(0.0, 1.0 - edgeDist * 3.8) * texColor.a;
+  vec3 shimmer = uTint * shimmerWave * shimmerMask * uActive * 0.018;
 
-  float finalAlpha = texColor.a * (0.85 + uActive * 0.15) * uVisibility;
+  // --- Ambient halo — slow breath, not a strobe ---
+  float haloBreath = sin(uTime * 0.58) * 0.5 + 0.5;
+  float haloDist = 1.0 - smoothstep(0.08, 0.48, edgeDist);
+  vec3 halo = uTint * haloDist * haloBreath * uActive * 0.05;
+
+  // --- Assemble ---
+  vec3 finalColor = tintedColor + fresnelGlow + caustic + shimmer + halo;
+
+  // Gentle active luminosity lift
+  finalColor *= 1.0 + uActive * 0.04;
+
+  // --- Intro emergence from the deep (materialise effect on load) ---
+  // uIntro goes 1→0 over ~3s, pulling weapon back into fog then releasing
+  float introFog = uIntro * 0.55;
+  float totalFog = clamp(vFogFactor + introFog, 0.0, 1.0);
+
+  // Fog color — matches scene atmosphere
+  vec3 fogColor = vec3(0.003, 0.028, 0.065);
+  finalColor = mix(finalColor, fogColor, totalFog * 0.38);
+
+  float finalAlpha = texColor.a * (0.88 + uActive * 0.12) * uVisibility;
+  finalAlpha *= 1.0 - totalFog * 0.28;
+
   gl_FragColor = vec4(finalColor, finalAlpha);
 }
 `
@@ -64,27 +99,26 @@ void main() {
 interface WeaponSpriteProps {
   weapon: Weapon
   isActive: boolean
-  fadeOut: boolean      // true when another weapon is focused
-  isSocialChapter: boolean  // true when social formations are shown
+  fadeOut: boolean
+  isSocialChapter: boolean
 }
 
 export default function WeaponSprite({ weapon, isActive, fadeOut, isSocialChapter }: WeaponSpriteProps) {
   const meshRef = useRef<THREE.Mesh>(null)
   const [texture, setTexture] = useState<THREE.Texture | null>(null)
 
+  // Exponential intro decay ref — no re-render needed
+  const introRef = useRef(1.0)
+
   useEffect(() => {
     const loader = new THREE.TextureLoader()
-    loader.load(
-      weapon.texture,
-      (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace
-        setTexture(tex)
-      },
-    )
+    loader.load(weapon.texture, (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace
+      setTexture(tex)
+    })
   }, [weapon.texture])
 
-  // 1x1 fully-transparent fallback — avoids sampling an uninitialized texture
-  // on Intel WebGL drivers, which can corrupt the shader state permanently
+  // 1x1 fully-transparent fallback — avoids uninitialized texture on Intel WebGL drivers
   const fallbackTexture = useMemo(() => {
     const tex = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1)
     tex.needsUpdate = true
@@ -93,19 +127,22 @@ export default function WeaponSprite({ weapon, isActive, fadeOut, isSocialChapte
 
   const uniforms = useMemo(
     () => ({
-      uTime: { value: 0 },
-      uActive: { value: 0 },
+      uTime:       { value: 0 },
+      uActive:     { value: 0 },
       uVisibility: { value: 1 },
-      uTint: { value: new THREE.Vector3(...weapon.tint) },
-      uTexture: { value: fallbackTexture },
+      uIntro:      { value: 1 },
+      uTint:       { value: new THREE.Vector3(...weapon.tint) },
+      uTexture:    { value: fallbackTexture },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [weapon.tint]
   )
 
-  const phase = useMemo(() => weapon.position[0] * 0.7 + weapon.position[2] * 0.4, [weapon.position])
+  const phase = useMemo(
+    () => weapon.position[0] * 0.7 + weapon.position[2] * 0.4,
+    [weapon.position]
+  )
 
-  // Sync texture into uniform once loaded
   useEffect(() => {
     if (!meshRef.current || !texture) return
     const mat = meshRef.current.material as THREE.ShaderMaterial
@@ -113,41 +150,46 @@ export default function WeaponSprite({ weapon, isActive, fadeOut, isSocialChapte
     mat.needsUpdate = true
   }, [texture])
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     if (!meshRef.current) return
-    const t = state.clock.elapsedTime
+    const t   = state.clock.elapsedTime
     const mat = meshRef.current.material as THREE.ShaderMaterial
 
     mat.uniforms.uTime.value = t
 
+    // Intro decay — exponential, ~3s to reach ~0.05
+    if (introRef.current > 0.002) {
+      introRef.current *= Math.exp(-1.1 * delta)
+      mat.uniforms.uIntro.value = introRef.current
+    } else if (mat.uniforms.uIntro.value !== 0) {
+      introRef.current = 0
+      mat.uniforms.uIntro.value = 0
+    }
+
     const targetActive = isActive ? 1.0 : 0.0
-    const curActive = mat.uniforms.uActive.value
+    const curActive    = mat.uniforms.uActive.value
     if (Math.abs(curActive - targetActive) > 0.001)
-      mat.uniforms.uActive.value = THREE.MathUtils.lerp(curActive, targetActive, 0.05)
+      mat.uniforms.uActive.value = THREE.MathUtils.lerp(curActive, targetActive, 0.04)
 
-    // Visibility: hidden in social chapter, full when active, faded when another weapon is focused
-    const targetVisibility = isSocialChapter ? 0.0 : isActive ? 1.0 : fadeOut ? 0.04 : 0.75
-    const curVis = mat.uniforms.uVisibility.value
-    if (Math.abs(curVis - targetVisibility) > 0.001)
-      mat.uniforms.uVisibility.value = THREE.MathUtils.lerp(curVis, targetVisibility, 0.04)
+    const targetVis = isSocialChapter ? 0.0 : isActive ? 1.0 : fadeOut ? 0.04 : 0.72
+    const curVis    = mat.uniforms.uVisibility.value
+    if (Math.abs(curVis - targetVis) > 0.001)
+      mat.uniforms.uVisibility.value = THREE.MathUtils.lerp(curVis, targetVis, 0.04)
 
-    const floatY = Math.sin(t * weapon.floatSpeed + phase) * weapon.floatAmplitude
-    const floatY2 = Math.cos(t * weapon.floatSpeed * 0.6 + phase + 1.2) * weapon.floatAmplitude * 0.4
+    // Two-frequency float — removes mechanical periodicity
+    const floatY  = Math.sin(t * weapon.floatSpeed + phase) * weapon.floatAmplitude
+    const floatY2 = Math.cos(t * weapon.floatSpeed * 0.58 + phase + 1.3) * weapon.floatAmplitude * 0.38
 
-    // Static position — camera stays fixed, weapons don't orbit
     meshRef.current.position.set(
       weapon.position[0],
       weapon.position[1] + floatY + floatY2,
       weapon.position[2]
     )
 
-    // Pendular oscillation on Y axis — ±0.13 rad (~7.5°), never profile view
-    // Each weapon has a unique speed & phase offset so they never look synchronised
-    const pendulumY = Math.sin(t * (0.28 + weapon.floatSpeed * 0.15) + phase) * 0.13
-
-    // Very subtle tilt on X & Z — micro-life without breaking 2D
-    const tiltX = Math.sin(t * weapon.floatSpeed * 0.4 + phase) * 0.022
-    const tiltZ = Math.cos(t * weapon.floatSpeed * 0.3 + phase + 2.0) * 0.018
+    // Organic pendulum — unique per weapon
+    const pendulumY = Math.sin(t * (0.26 + weapon.floatSpeed * 0.14) + phase) * 0.11
+    const tiltX     = Math.sin(t * weapon.floatSpeed * 0.38 + phase)       * 0.018
+    const tiltZ     = Math.cos(t * weapon.floatSpeed * 0.28 + phase + 2.0) * 0.014
 
     meshRef.current.rotation.set(
       weapon.rotation[0] + tiltX,
