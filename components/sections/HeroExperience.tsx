@@ -36,12 +36,14 @@ export default function HeroExperience() {
   const [hoveredSocialId, setHoveredSocialId] = useState<string | null>(null)
 
   // Refs used inside event handlers — avoid recreating handlers on each render
-  const chapterIndexRef  = useRef(0)
-  const isLockedRef      = useRef(false)
-  const accDeltaRef      = useRef(0)
-  const lockTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const idleTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const touchStartYRef   = useRef(0)
+  const chapterIndexRef    = useRef(0)
+  const isLockedRef        = useRef(false)
+  const accDeltaRef        = useRef(0)
+  const lockTimerRef       = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const idleTimerRef       = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const touchStartYRef     = useRef(0)
+  // Mirror of hoveredSocialId accessible in event handlers without closure issues
+  const hoveredSocialIdRef = useRef<string | null>(null)
 
   // ─── Core step function ────────────────────────────────────────────────────
   useEffect(() => {
@@ -69,6 +71,8 @@ export default function HeroExperience() {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       if (isLockedRef.current) return
+      // Priority: social hover interaction locks scroll narrative
+      if (hoveredSocialIdRef.current !== null) return
 
       const delta = normalizeDelta(e)
       accDeltaRef.current += delta
@@ -137,9 +141,16 @@ export default function HeroExperience() {
     }, TRANSITION_LOCK_MS)
   }
 
+  // ─── Stable social hover handler — keeps ref in sync ─────────────────────
+  const handleSocialHover = (id: string | null) => {
+    hoveredSocialIdRef.current = id
+    setHoveredSocialId(id)
+  }
+
   // ─── Derived state ─────────────────────────────────────────────────────────
-  const activeChapter = chapters[chapterIndex]
-  const accentColor   = getAccentColor(activeChapter)
+  const activeChapter   = chapters[chapterIndex]
+  const isSocialChapter = activeChapter.id === "social"
+  const accentColor     = getAccentColor(activeChapter)
   // Progress bar: position within weapon chapters only (excludes social)
   const weaponChapters = chapters.filter((c) => c.weaponId !== null)
   const weaponIdx      = weaponChapters.findIndex((c) => c.id === activeChapter.id)
@@ -156,7 +167,7 @@ export default function HeroExperience() {
         <ExperienceCanvas
           activeChapter={activeChapter}
           chapterProgress={0.5}
-          onSocialHover={setHoveredSocialId}
+          onSocialHover={handleSocialHover}
         />
       </div>
 
@@ -182,8 +193,8 @@ export default function HeroExperience() {
       {/* Chapter text overlay */}
       <ChapterOverlay chapter={activeChapter} chapterProgress={0.5} />
 
-      {/* Social hover label */}
-      <SocialHoverLabel hoveredId={hoveredSocialId} />
+      {/* Social hover label — only rendered on social chapter to avoid text overlap */}
+      <SocialHoverLabel hoveredId={isSocialChapter ? hoveredSocialId : null} />
 
       {/* Navigation dots — now clickable */}
       <NavDots
