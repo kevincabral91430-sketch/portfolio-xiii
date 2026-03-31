@@ -2,19 +2,36 @@
 
 import { useEffect, useRef, useState } from "react"
 import type { Chapter } from "@/lib/three/chapters"
+import FFXPanel from "@/components/ui/FFXPanel"
 
 interface ChapterOverlayProps {
   chapter: Chapter
   chapterProgress: number
-  // When false (during intro), all text is suppressed — no early reveal
   introComplete: boolean
+  // When true, social hover is active — hide weapon text to avoid overlap
+  socialActive: boolean
 }
 
-export default function ChapterOverlay({ chapter, chapterProgress, introComplete }: ChapterOverlayProps) {
-  const [displayedChapter, setDisplayedChapter] = useState<Chapter>(chapter)
-  const [visible, setVisible] = useState(false)
+const WEAPON_ACCENTS: Record<string, string> = {
+  tidus:   "#67e8f9",
+  yuna:    "#c4b5fd",
+  auron:   "#f87171",
+  wakka:   "#fb923c",
+  lulu:    "#a78bfa",
+  rikku:   "#34d399",
+  kimahri: "#60a5fa",
+}
 
-  const latestChapterRef = useRef<Chapter>(chapter)
+export default function ChapterOverlay({
+  chapter,
+  chapterProgress: _cp,
+  introComplete,
+  socialActive,
+}: ChapterOverlayProps) {
+  const [displayedChapter, setDisplayedChapter] = useState<Chapter>(chapter)
+  const [visible, setVisible]                   = useState(false)
+
+  const latestChapterRef  = useRef<Chapter>(chapter)
   latestChapterRef.current = chapter
 
   const visibleRef = useRef(false)
@@ -25,7 +42,7 @@ export default function ChapterOverlay({ chapter, chapterProgress, introComplete
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Initial show — deferred until introComplete to avoid text appearing during camera travel
+  // Initial show — deferred until camera travel completes
   useEffect(() => {
     if (!introComplete) return
     const t = setTimeout(() => {
@@ -38,13 +55,11 @@ export default function ChapterOverlay({ chapter, chapterProgress, introComplete
     return () => clearTimeout(t)
   }, [introComplete])
 
+  // Chapter change handler
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current)
-
-    // Suppress during intro — camera is still travelling
     if (!introComplete) return
 
-    // No title → hide
     if (!chapter.title) {
       setVisible(false)
       return
@@ -53,21 +68,18 @@ export default function ChapterOverlay({ chapter, chapterProgress, introComplete
     const isSameChapter = chapter.id === displayedIdRef.current
 
     if (isSameChapter) {
-      // Re-entering same chapter after passing through intro (visible was false)
       if (!visibleRef.current) {
-        timerRef.current = setTimeout(() => {
-          setVisible(true)
-        }, 150)
+        timerRef.current = setTimeout(() => setVisible(true), 150)
       }
       return
     }
 
-    // New chapter → fade out → swap → fade in
+    // New chapter: hide → swap → show
     setVisible(false)
     timerRef.current = setTimeout(() => {
       setDisplayedChapter(latestChapterRef.current)
       setVisible(true)
-    }, 320)
+    }, 340)
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
@@ -77,8 +89,11 @@ export default function ChapterOverlay({ chapter, chapterProgress, introComplete
   if (!displayedChapter.title) return null
 
   const accentColor = displayedChapter.weaponId
-    ? WEAPON_ACCENTS[displayedChapter.weaponId] ?? "#67e8f9"
+    ? (WEAPON_ACCENTS[displayedChapter.weaponId] ?? "#67e8f9")
     : "#67e8f9"
+
+  // Social active = weapon panel invisible (no opacity hack — fully hidden)
+  const panelVisible = visible && !socialActive
 
   return (
     <div
@@ -86,83 +101,151 @@ export default function ChapterOverlay({ chapter, chapterProgress, introComplete
       style={{ paddingLeft: "clamp(2rem, 6vw, 6rem)" }}
       aria-live="polite"
     >
-      <div
-        className="max-w-lg transition-all duration-500 ease-out"
-        style={{
-          opacity: visible ? 1 : 0,
-          transform: visible ? "translateY(0px)" : "translateY(18px)",
-        }}
+      <FFXPanel
+        visible={panelVisible}
+        accentColor={accentColor}
+        variant="weapon"
       >
-        {displayedChapter.kicker && (
+        {/* ── Kicker ──────────────────────────────────────────────────────── */}
+        <AnimLine delay={0} visible={panelVisible}>
           <p
-            className="mb-4 font-mono text-[11px] tracking-[0.35em] uppercase"
-            style={{ color: `${accentColor}99` }}
+            style={{
+              marginBottom:    "0.75rem",
+              fontFamily:      "monospace",
+              fontSize:        "10px",
+              letterSpacing:   "0.32em",
+              textTransform:   "uppercase",
+              color:           `${accentColor}99`,
+            }}
           >
             {displayedChapter.kicker}
           </p>
-        )}
+        </AnimLine>
 
-        {displayedChapter.id === "tidus" ? (
-          <h1
-            className="mb-3 font-light leading-[1.0] tracking-tight text-white"
-            style={{ fontSize: "clamp(3rem, 6vw, 6rem)" }}
+        {/* ── Title ───────────────────────────────────────────────────────── */}
+        <AnimLine delay={60} visible={panelVisible}>
+          {displayedChapter.id === "tidus" ? (
+            <h1
+              style={{
+                marginBottom:  "0.5rem",
+                fontWeight:    300,
+                lineHeight:    1.0,
+                letterSpacing: "-0.02em",
+                color:         "#fff",
+                fontSize:      "clamp(2.8rem, 5.5vw, 5.5rem)",
+              }}
+            >
+              {displayedChapter.title}
+            </h1>
+          ) : (
+            <h2
+              style={{
+                marginBottom:  "0.5rem",
+                fontWeight:    300,
+                lineHeight:    1.05,
+                letterSpacing: "-0.01em",
+                color:         "#fff",
+                fontSize:      "clamp(2rem, 4vw, 4rem)",
+              }}
+            >
+              {displayedChapter.title}
+            </h2>
+          )}
+        </AnimLine>
+
+        {/* ── Accent rule ─────────────────────────────────────────────────── */}
+        <AnimLine delay={100} visible={panelVisible}>
+          <div
+            style={{
+              marginBottom:    "0.85rem",
+              height:          "1px",
+              width:           panelVisible ? "2.5rem" : "0px",
+              background:      accentColor,
+              opacity:         0.55,
+              transition:      "width 500ms 380ms cubic-bezier(0.22,1,0.36,1)",
+            }}
+          />
+        </AnimLine>
+
+        {/* ── Subtitle ────────────────────────────────────────────────────── */}
+        <AnimLine delay={140} visible={panelVisible}>
+          <p
+            style={{
+              marginBottom: "0.35rem",
+              fontWeight:   300,
+              lineHeight:   1.5,
+              color:        "rgba(255,255,255,0.65)",
+              fontSize:     "clamp(0.88rem, 1.2vw, 1.1rem)",
+            }}
           >
-            {displayedChapter.title}
-          </h1>
-        ) : (
-          <h2
-            className="mb-3 font-light leading-[1.05] tracking-tight text-white"
-            style={{ fontSize: "clamp(2.2rem, 4.5vw, 4.5rem)" }}
+            {displayedChapter.subtitle}
+          </p>
+        </AnimLine>
+
+        {/* ── Caption ─────────────────────────────────────────────────────── */}
+        <AnimLine delay={185} visible={panelVisible}>
+          <p
+            style={{
+              marginBottom: "1rem",
+              fontSize:     "0.82rem",
+              color:        "rgba(255,255,255,0.35)",
+            }}
           >
-            {displayedChapter.title}
-          </h2>
-        )}
+            {displayedChapter.caption}
+          </p>
+        </AnimLine>
 
-        <div
-          className="mb-4 h-px transition-all duration-700"
-          style={{
-            background: accentColor,
-            width: visible ? "3rem" : "0px",
-            opacity: 0.6,
-          }}
-        />
-
-        <p
-          className="mb-2 font-light leading-relaxed text-white/65"
-          style={{ fontSize: "clamp(0.95rem, 1.3vw, 1.2rem)" }}
-        >
-          {displayedChapter.subtitle}
-        </p>
-
-        <p className="mb-6 text-sm text-white/35">{displayedChapter.caption}</p>
-
+        {/* ── Tags ────────────────────────────────────────────────────────── */}
         {displayedChapter.tags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {displayedChapter.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full px-3 py-1 font-mono text-[11px] backdrop-blur-sm"
-                style={{
-                  border: `1px solid ${accentColor}30`,
-                  color: `${accentColor}90`,
-                }}
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
+          <AnimLine delay={230} visible={panelVisible}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+              {displayedChapter.tags.map((tag) => (
+                <span
+                  key={tag}
+                  style={{
+                    borderRadius:    "2px",
+                    padding:         "3px 10px",
+                    fontFamily:      "monospace",
+                    fontSize:        "10px",
+                    letterSpacing:   "0.2em",
+                    textTransform:   "uppercase",
+                    border:          `1px solid ${accentColor}28`,
+                    color:           `${accentColor}88`,
+                    background:      `rgba(${accentColor.replace("#","").match(/.{2}/g)?.map(h=>parseInt(h,16)).join(",")},0.05)`,
+                    backdropFilter:  "blur(4px)",
+                  }}
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </AnimLine>
         )}
-      </div>
+      </FFXPanel>
     </div>
   )
 }
 
-const WEAPON_ACCENTS: Record<string, string> = {
-  tidus: "#67e8f9",
-  yuna: "#c4b5fd",
-  auron: "#f87171",
-  wakka: "#fb923c",
-  lulu: "#a78bfa",
-  rikku: "#34d399",
-  kimahri: "#60a5fa",
+// ─── Sequential line animator ────────────────────────────────────────────────
+function AnimLine({
+  children,
+  delay,
+  visible,
+}: {
+  children: React.ReactNode
+  delay: number
+  visible: boolean
+}) {
+  return (
+    <div
+      style={{
+        opacity:    visible ? 1 : 0,
+        transform:  visible ? "translateY(0)" : "translateY(8px)",
+        transition: `opacity 340ms ${delay}ms cubic-bezier(0.22,1,0.36,1),
+                     transform 380ms ${delay}ms cubic-bezier(0.22,1,0.36,1)`,
+      }}
+    >
+      {children}
+    </div>
+  )
 }

@@ -196,11 +196,12 @@ export default function HeroExperience() {
         </div>
       </div>
 
-      {/* Chapter text — suppressed during intro via introComplete prop */}
+      {/* Chapter text — suppressed during intro and when social hover is active */}
       <ChapterOverlay
         chapter={activeChapter}
         chapterProgress={0.5}
         introComplete={introComplete}
+        socialActive={isSocialChapter && hoveredSocialId !== null}
       />
 
       {/* Social hover label — only on social chapter */}
