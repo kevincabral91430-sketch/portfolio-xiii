@@ -6,17 +6,21 @@ import * as THREE from "three"
 import type { Chapter } from "@/lib/three/chapters"
 import { getCameraForWeapon } from "@/lib/three/cameraShots"
 
-// ─── Cinematic intro — camera starts high/far, descends into the sanctuaire ──
-const INTRO_POS  = new THREE.Vector3(2.5, 20, 50)   // high overhead, far back
-const INTRO_LOOK = new THREE.Vector3(0,  3,  0)     // gaze slightly above centre
-const INTRO_FOV  = 54                                // wider — vast, encompassing
+// ─── Cinematic intro — camera starts very far, high above the abyss ──────────
+// Gives a sense of immensity before the descent into the sanctuaire
+const INTRO_POS  = new THREE.Vector3(3, 32, 88)   // deep outer space — scene is a distant glimmer
+const INTRO_LOOK = new THREE.Vector3(0,  2,  0)   // gaze toward the weapon silhouette
+const INTRO_FOV  = 56                              // slightly wider — universe-scale feeling
 
 // Duration of the cinematic camera travel (seconds)
-export const INTRO_CAM_DURATION = 5.2
+// Longer = more solemnity, more time in the darkness before arrival
+export const INTRO_CAM_DURATION = 6.5
 
-// Ease: slow start (contemplative), sharp mid arrival, gentle settle
-function easeOutQuart(t: number): number {
-  return 1 - Math.pow(1 - t, 4)
+// Ease: contemplative slow start (0–40%), sharper approach (40–85%), silky settle (85–100%)
+function easeIntro(t: number): number {
+  if (t < 0.40) return t * t * 2.8 * 0.40 / 0.40   // gentle quadratic start
+  const t2 = (t - 0.40) / 0.60
+  return 0.448 + (1 - 0.448) * (1 - Math.pow(1 - t2, 3.8))
 }
 
 interface CameraRigProps {
@@ -27,7 +31,6 @@ interface CameraRigProps {
 export default function CameraRig({ activeChapter }: CameraRigProps) {
   const { camera } = useThree()
 
-  // All vectors pre-allocated — zero GC pressure in useFrame
   const currentLook  = useRef(new THREE.Vector3().copy(INTRO_LOOK))
   const blendPos     = useRef(new THREE.Vector3())
   const blendLook    = useRef(new THREE.Vector3())
@@ -38,8 +41,7 @@ export default function CameraRig({ activeChapter }: CameraRigProps) {
   const mouse        = useRef({ x: 0, y: 0 })
   const smoothMouse  = useRef({ x: 0, y: 0 })
 
-  // Teleport camera to intro start on mount — prevents the 1-frame snap from
-  // default Canvas camera position to the intro start
+  // Teleport camera to intro start on mount — no 1-frame snap
   useEffect(() => {
     camera.position.copy(INTRO_POS)
     currentLook.current.copy(INTRO_LOOK)
@@ -60,21 +62,20 @@ export default function CameraRig({ activeChapter }: CameraRigProps) {
   useFrame((state, delta) => {
     const t    = state.clock.elapsedTime
     const shot = getCameraForWeapon(activeChapter.weaponId, activeChapter.id)
-
     const perspCamera = camera as THREE.PerspectiveCamera
 
-    // ── Intro progress ───────────────────────────────────────────────────────
+    // ── Intro progress ────────────────────────────────────────────────────────
     const introRaw  = Math.min(t / INTRO_CAM_DURATION, 1)
-    const introEase = easeOutQuart(introRaw)
+    const introEase = easeIntro(introRaw)
 
-    // ── Blend target: intro start → chapter shot ─────────────────────────────
+    // ── Blend: intro start → chapter shot ────────────────────────────────────
     shotPosRef.current.set(...shot.position)
     shotLookRef.current.set(...shot.target)
 
     blendPos.current.lerpVectors(INTRO_POS,  shotPosRef.current,  introEase)
     blendLook.current.lerpVectors(INTRO_LOOK, shotLookRef.current, introEase)
 
-    // ── FOV — blend intro FOV → shot FOV ─────────────────────────────────────
+    // ── FOV — wide cosmic → cinematic close ──────────────────────────────────
     const targetFov = INTRO_FOV + (shot.fov - INTRO_FOV) * introEase
     const fovAlpha  = 1 - Math.exp(-1.6 * delta)
     const newFov    = THREE.MathUtils.lerp(perspCamera.fov, targetFov, fovAlpha)
@@ -83,34 +84,32 @@ export default function CameraRig({ activeChapter }: CameraRigProps) {
       perspCamera.updateProjectionMatrix()
     }
 
-    // ── Mouse parallax — eases in only once intro is past halfway ────────────
-    const parallaxWeight = Math.max(0, introRaw * 2 - 1)  // 0 until t=2.6s, then 0→1
+    // ── Mouse parallax — eases in only after 60% of intro ────────────────────
+    const parallaxWeight = Math.max(0, introRaw * (1 / 0.40) - 1.5)  // 0 until 60%, then 0→1
     smoothMouse.current.x = THREE.MathUtils.lerp(
-      smoothMouse.current.x, mouse.current.x * parallaxWeight, 0.028
+      smoothMouse.current.x, mouse.current.x * Math.min(parallaxWeight, 1), 0.028
     )
     smoothMouse.current.y = THREE.MathUtils.lerp(
-      smoothMouse.current.y, mouse.current.y * parallaxWeight, 0.028
+      smoothMouse.current.y, mouse.current.y * Math.min(parallaxWeight, 1), 0.028
     )
 
     tempPos.current.copy(blendPos.current)
     tempPos.current.x += smoothMouse.current.x * 0.22
     tempPos.current.y += smoothMouse.current.y * 0.11
 
-    // ── Position — organic exponential lerp ──────────────────────────────────
-    // Higher lambda during intro for tighter tracking of the moving target;
-    // slightly lower lambda at rest (more floaty)
-    const posLambda = introRaw < 1 ? 2.8 : 2.2
+    // ── Position — tighter lambda during travel for clean tracking ────────────
+    const posLambda = introRaw < 1 ? 3.2 : 2.2
     const posAlpha  = 1 - Math.exp(-posLambda * delta)
     camera.position.lerp(tempPos.current, posAlpha)
 
-    // ── Breathing — only once settled after intro ─────────────────────────────
-    const distToTarget  = camera.position.distanceTo(tempPos.current)
-    const settled       = Math.max(0, introRaw - 0.85) / 0.15   // ramps 0→1 in last 15% of intro
-    const breathWeight  = Math.max(0, 1 - distToTarget * 5) * 0.006 * settled
-    camera.position.y  += Math.sin(t * 0.62) * breathWeight
-    camera.position.x  += Math.cos(t * 0.45 + 1.1) * breathWeight * 0.55
+    // ── Breathing — only after travel completes ───────────────────────────────
+    const settled      = Math.max(0, (introRaw - 0.88) / 0.12)
+    const distToTarget = camera.position.distanceTo(tempPos.current)
+    const breathWeight = Math.max(0, 1 - distToTarget * 5) * 0.006 * settled
+    camera.position.y += Math.sin(t * 0.62) * breathWeight
+    camera.position.x += Math.cos(t * 0.45 + 1.1) * breathWeight * 0.55
 
-    // ── Lookpoint — slightly faster than position (natural lag) ──────────────
+    // ── Lookpoint ─────────────────────────────────────────────────────────────
     const lookAlpha = 1 - Math.exp(-2.6 * delta)
     currentLook.current.lerp(blendLook.current, lookAlpha)
     camera.lookAt(currentLook.current)
