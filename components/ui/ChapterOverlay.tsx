@@ -6,9 +6,11 @@ import type { Chapter } from "@/lib/three/chapters"
 interface ChapterOverlayProps {
   chapter: Chapter
   chapterProgress: number
+  // When false (during intro), all text is suppressed — no early reveal
+  introComplete: boolean
 }
 
-export default function ChapterOverlay({ chapter, chapterProgress }: ChapterOverlayProps) {
+export default function ChapterOverlay({ chapter, chapterProgress, introComplete }: ChapterOverlayProps) {
   const [displayedChapter, setDisplayedChapter] = useState<Chapter>(chapter)
   const [visible, setVisible] = useState(false)
 
@@ -23,20 +25,24 @@ export default function ChapterOverlay({ chapter, chapterProgress }: ChapterOver
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Initial show
+  // Initial show — deferred until introComplete to avoid text appearing during camera travel
   useEffect(() => {
+    if (!introComplete) return
     const t = setTimeout(() => {
       const c = latestChapterRef.current
       if (c.title) {
         setDisplayedChapter(c)
         setVisible(true)
       }
-    }, 700)
+    }, 500)
     return () => clearTimeout(t)
-  }, [])
+  }, [introComplete])
 
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current)
+
+    // Suppress during intro — camera is still travelling
+    if (!introComplete) return
 
     // No title → hide
     if (!chapter.title) {
@@ -66,7 +72,7 @@ export default function ChapterOverlay({ chapter, chapterProgress }: ChapterOver
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [chapter.id, chapter.title])
+  }, [chapter.id, chapter.title, introComplete])
 
   if (!displayedChapter.title) return null
 

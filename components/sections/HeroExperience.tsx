@@ -1,54 +1,64 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import { chapters } from "@/lib/three/chapters"
 import { weapons } from "@/lib/three/weaponData"
 import ChapterOverlay from "@/components/ui/ChapterOverlay"
 import NavDots from "@/components/ui/NavDots"
 import SocialHoverLabel from "@/components/ui/SocialHoverLabel"
-import LoadingScreen from "@/components/ui/LoadingScreen"
+import IntroVeil from "@/components/ui/IntroVeil"
+import { INTRO_CAM_DURATION } from "@/components/three/CameraRig"
 import type { Chapter } from "@/lib/three/chapters"
 
 const ExperienceCanvas = dynamic(() => import("@/components/three/ExperienceCanvas"), {
   ssr: false,
 })
 
-// ─── Step scroll config ─────────────────────────────────────────────────────
-// Pixels accumulated before a step fires (handles both trackpad & mouse wheel)
-const STEP_THRESHOLD = 60
-// ms locked after each step — covers camera lerp travel + trackpad momentum decay
+// ─── Step scroll config ──────────────────────────────────────────────────────
+const STEP_THRESHOLD    = 60
 const TRANSITION_LOCK_MS = 1200
+
+// ─── Intro timing ────────────────────────────────────────────────────────────
+// Text appears 500ms after camera travel finishes (ChapterOverlay handles the +500ms internally)
+const INTRO_COMPLETE_MS = INTRO_CAM_DURATION * 1000   // matches CameraRig travel
 
 function getAccentColor(chapter: Chapter): string {
   if (!chapter.weaponId) return "#67e8f9"
   return weapons.find((w) => w.id === chapter.weaponId)?.color ?? "#67e8f9"
 }
 
-// Normalize wheel deltaY across devices & deltaMode
 function normalizeDelta(e: WheelEvent): number {
-  if (e.deltaMode === 1) return e.deltaY * 40   // lines → px
-  if (e.deltaMode === 2) return e.deltaY * window.innerHeight  // pages → px
-  return e.deltaY  // pixels (default)
+  if (e.deltaMode === 1) return e.deltaY * 40
+  if (e.deltaMode === 2) return e.deltaY * window.innerHeight
+  return e.deltaY
 }
 
 export default function HeroExperience() {
-  const [chapterIndex, setChapterIndex] = useState(0)
+  const [chapterIndex,    setChapterIndex]    = useState(0)
   const [hoveredSocialId, setHoveredSocialId] = useState<string | null>(null)
-  // Loader state — shown on top until animation completes (~2.9s)
-  const [loaderDone, setLoaderDone] = useState(false)
+  // introComplete: false during camera travel, true once camera has settled
+  const [introComplete,   setIntroComplete]   = useState(false)
 
-  // Refs used inside event handlers — avoid recreating handlers on each render
   const chapterIndexRef    = useRef(0)
-  const isLockedRef        = useRef(false)
+  const isLockedRef        = useRef(true)   // locked from the start — intro holds scroll
   const accDeltaRef        = useRef(0)
   const lockTimerRef       = useRef<ReturnType<typeof setTimeout> | null>(null)
   const idleTimerRef       = useRef<ReturnType<typeof setTimeout> | null>(null)
   const touchStartYRef     = useRef(0)
-  // Mirror of hoveredSocialId accessible in event handlers without closure issues
   const hoveredSocialIdRef = useRef<string | null>(null)
 
-  // ─── Core step function ────────────────────────────────────────────────────
+  // ─── Intro lock — held for INTRO_COMPLETE_MS, then scroll becomes available ──
+  useEffect(() => {
+    const t = setTimeout(() => {
+      isLockedRef.current = false
+      accDeltaRef.current = 0
+      setIntroComplete(true)
+    }, INTRO_COMPLETE_MS)
+    return () => clearTimeout(t)
+  }, [])
+
+  // ─── Core step function ──────────────────────────────────────────────────────
   useEffect(() => {
     const totalChapters = chapters.length
 
@@ -59,28 +69,24 @@ export default function HeroExperience() {
       chapterIndexRef.current = next
       setChapterIndex(next)
 
-      // Lock immediately — reset after transition window
       isLockedRef.current = true
       accDeltaRef.current = 0
 
       if (lockTimerRef.current) clearTimeout(lockTimerRef.current)
       lockTimerRef.current = setTimeout(() => {
         isLockedRef.current = false
-        accDeltaRef.current = 0   // drain tout momentum résiduel à l'expiration
+        accDeltaRef.current = 0
       }, TRANSITION_LOCK_MS)
     }
 
-    // ─── Mouse wheel & trackpad ──────────────────────────────────────────────
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       if (isLockedRef.current) return
-      // Priority: social hover interaction locks scroll narrative
       if (hoveredSocialIdRef.current !== null) return
 
       const delta = normalizeDelta(e)
       accDeltaRef.current += delta
 
-      // Reset accumulator when user pauses scrolling (no event for 150ms)
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current)
       idleTimerRef.current = setTimeout(() => {
         accDeltaRef.current = 0
@@ -91,22 +97,13 @@ export default function HeroExperience() {
       }
     }
 
-    // ─── Keyboard ────────────────────────────────────────────────────────────
     const onKeyDown = (e: KeyboardEvent) => {
-      if (["ArrowDown", "PageDown", " "].includes(e.key)) {
-        e.preventDefault()
-        step(1)
-      } else if (["ArrowUp", "PageUp"].includes(e.key)) {
-        e.preventDefault()
-        step(-1)
-      }
+      if (["ArrowDown", "PageDown", " "].includes(e.key)) { e.preventDefault(); step(1) }
+      else if (["ArrowUp", "PageUp"].includes(e.key))     { e.preventDefault(); step(-1) }
     }
 
-    // ─── Touch (mobile) ──────────────────────────────────────────────────────
-    const onTouchStart = (e: TouchEvent) => {
-      touchStartYRef.current = e.touches[0].clientY
-    }
-    const onTouchEnd = (e: TouchEvent) => {
+    const onTouchStart = (e: TouchEvent) => { touchStartYRef.current = e.touches[0].clientY }
+    const onTouchEnd   = (e: TouchEvent) => {
       const delta = touchStartYRef.current - e.changedTouches[0].clientY
       if (Math.abs(delta) > 40) step(delta > 0 ? 1 : -1)
     }
@@ -126,7 +123,7 @@ export default function HeroExperience() {
     }
   }, [])
 
-  // ─── External navigation (NavDots click) ──────────────────────────────────
+  // ─── External navigation (NavDots) ──────────────────────────────────────────
   const goToChapterById = (id: string) => {
     if (isLockedRef.current) return
     const idx = chapters.findIndex((c) => c.id === id)
@@ -144,33 +141,31 @@ export default function HeroExperience() {
     }, TRANSITION_LOCK_MS)
   }
 
-  // ─── Loader completion ────────────────────────────────────────────────────
-  const handleLoaderComplete = useCallback(() => {
-    setLoaderDone(true)
-  }, [])
-
-  // ─── Stable social hover handler — keeps ref in sync ─────────────────────
+  // ─── Social hover — keeps ref in sync ────────────────────────────────────────
   const handleSocialHover = (id: string | null) => {
     hoveredSocialIdRef.current = id
     setHoveredSocialId(id)
   }
 
-  // ─── Derived state ─────────────────────────────────────────────────────────
+  // ─── Derived state ────────────────────────────────────────────────────────────
   const activeChapter   = chapters[chapterIndex]
   const isSocialChapter = activeChapter.id === "social"
   const accentColor     = getAccentColor(activeChapter)
-  // Progress bar: position within weapon chapters only (excludes social)
-  const weaponChapters = chapters.filter((c) => c.weaponId !== null)
-  const weaponIdx      = weaponChapters.findIndex((c) => c.id === activeChapter.id)
-  const barProgress    = weaponIdx === -1
-    ? 1
-    : weaponIdx / (weaponChapters.length - 1)
+  const weaponChapters  = chapters.filter((c) => c.weaponId !== null)
+  const weaponIdx       = weaponChapters.findIndex((c) => c.id === activeChapter.id)
+  const barProgress     = weaponIdx === -1 ? 1 : weaponIdx / (weaponChapters.length - 1)
+
+  // UI elements fade in only once intro is complete
+  const uiOpacity = introComplete ? 1 : 0
+  const uiStyle   = {
+    opacity:    uiOpacity,
+    transition: "opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1)",
+  }
 
   return (
-    // Fixed container — no scrollable height needed anymore
     <div className="fixed inset-0 overflow-hidden">
 
-      {/* 3D canvas — fullscreen */}
+      {/* 3D canvas — fullscreen, always mounted (loads during intro) */}
       <div className="absolute inset-0 z-0">
         <ExperienceCanvas
           activeChapter={activeChapter}
@@ -179,8 +174,11 @@ export default function HeroExperience() {
         />
       </div>
 
-      {/* Scroll / step indicator */}
-      <div className="pointer-events-none fixed bottom-8 left-1/2 z-20 -translate-x-1/2 flex flex-col items-center gap-2">
+      {/* Scroll / step indicator — fades in after intro */}
+      <div
+        className="pointer-events-none fixed bottom-8 left-1/2 z-20 -translate-x-1/2 flex flex-col items-center gap-2"
+        style={uiStyle}
+      >
         <span
           className="font-mono text-[10px] tracking-[0.35em] uppercase"
           style={{ color: accentColor + "50" }}
@@ -198,23 +196,29 @@ export default function HeroExperience() {
         </div>
       </div>
 
-      {/* Chapter text overlay */}
-      <ChapterOverlay chapter={activeChapter} chapterProgress={0.5} />
-
-      {/* Social hover label — only rendered on social chapter to avoid text overlap */}
-      <SocialHoverLabel hoveredId={isSocialChapter ? hoveredSocialId : null} />
-
-      {/* Navigation dots — now clickable */}
-      <NavDots
-        activeChapterId={activeChapter.id}
-        accentColor={accentColor}
-        onChapterSelect={goToChapterById}
+      {/* Chapter text — suppressed during intro via introComplete prop */}
+      <ChapterOverlay
+        chapter={activeChapter}
+        chapterProgress={0.5}
+        introComplete={introComplete}
       />
 
-      {/* Top progress bar */}
+      {/* Social hover label — only on social chapter */}
+      <SocialHoverLabel hoveredId={isSocialChapter ? hoveredSocialId : null} />
+
+      {/* Navigation dots — fades in after intro */}
+      <div style={uiStyle}>
+        <NavDots
+          activeChapterId={activeChapter.id}
+          accentColor={accentColor}
+          onChapterSelect={goToChapterById}
+        />
+      </div>
+
+      {/* Top progress bar — fades in after intro */}
       <div
         className="pointer-events-none fixed inset-x-0 top-0 z-30 h-px"
-        style={{ background: accentColor + "12" }}
+        style={{ ...uiStyle, background: accentColor + "12" }}
       >
         <div
           className="h-full transition-all duration-700 ease-out"
@@ -222,12 +226,9 @@ export default function HeroExperience() {
         />
       </div>
 
-      {/* Loading screen — covers everything until water animation completes */}
-      {!loaderDone && (
-        <div className="pointer-events-none fixed inset-0 z-50">
-          <LoadingScreen onComplete={handleLoaderComplete} />
-        </div>
-      )}
+      {/* Sacred veil — dissolves into the 3D scene, removed from DOM once transparent */}
+      <IntroVeil />
+
     </div>
   )
 }
