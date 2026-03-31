@@ -1,12 +1,13 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import { chapters } from "@/lib/three/chapters"
 import { weapons } from "@/lib/three/weaponData"
 import ChapterOverlay from "@/components/ui/ChapterOverlay"
 import NavDots from "@/components/ui/NavDots"
 import SocialHoverLabel from "@/components/ui/SocialHoverLabel"
+import LoadingScreen from "@/components/ui/LoadingScreen"
 import type { Chapter } from "@/lib/three/chapters"
 
 const ExperienceCanvas = dynamic(() => import("@/components/three/ExperienceCanvas"), {
@@ -34,6 +35,8 @@ function normalizeDelta(e: WheelEvent): number {
 export default function HeroExperience() {
   const [chapterIndex, setChapterIndex] = useState(0)
   const [hoveredSocialId, setHoveredSocialId] = useState<string | null>(null)
+  // Loader state — shown on top until animation completes (~2.9s)
+  const [loaderDone, setLoaderDone] = useState(false)
 
   // Refs used inside event handlers — avoid recreating handlers on each render
   const chapterIndexRef    = useRef(0)
@@ -141,6 +144,11 @@ export default function HeroExperience() {
     }, TRANSITION_LOCK_MS)
   }
 
+  // ─── Loader completion ────────────────────────────────────────────────────
+  const handleLoaderComplete = useCallback(() => {
+    setLoaderDone(true)
+  }, [])
+
   // ─── Stable social hover handler — keeps ref in sync ─────────────────────
   const handleSocialHover = (id: string | null) => {
     hoveredSocialIdRef.current = id
@@ -213,6 +221,13 @@ export default function HeroExperience() {
           style={{ width: `${barProgress * 100}%`, background: accentColor + "80" }}
         />
       </div>
+
+      {/* Loading screen — covers everything until water animation completes */}
+      {!loaderDone && (
+        <div className="pointer-events-none fixed inset-0 z-50">
+          <LoadingScreen onComplete={handleLoaderComplete} />
+        </div>
+      )}
     </div>
   )
 }
