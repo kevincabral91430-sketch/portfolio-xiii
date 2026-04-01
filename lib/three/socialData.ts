@@ -20,7 +20,7 @@ function arc(cx: number, cy: number, rx: number, ry: number, a0: number, a1: num
 }
 
 // ─── Letter builders (h = glyph height, centered at cx,cy) ───────────────────
-const D = 14  // base density scalar
+const D = 18  // density scalar — 18 gives rich pyrefly clouds
 
 function mkI(cx: number, cy: number, h: number): Pt3[] {
   const sw = h * 0.22, hh = h * 0.5
@@ -178,8 +178,8 @@ function mkH(cx: number, cy: number, h: number): Pt3[] {
 }
 
 // ─── Word composition ─────────────────────────────────────────────────────────
-const H    = 1.8            // glyph height in world units
-const KERN = H * 0.72       // letter spacing
+const H    = 2.4             // glyph height in world units — monumental presence
+const KERN = H * 0.72        // letter spacing
 
 type LetterFn = (cx: number, cy: number, h: number) => Pt3[]
 
@@ -195,12 +195,12 @@ const INSTAGRAM_PARTICLES: Pt3[] = word([mkI, mkN, mkS, mkT, mkA, mkG, mkR, mkA,
 // ─── LINKEDIN ────────────────────────────────────────────────────────────────
 const LINKEDIN_PARTICLES: Pt3[] = word([mkL, mkI, mkN, mkK, mkE, mkD, mkI, mkN])
 
-// ─── XIII PRODUCTION — two rows ──────────────────────────────────────────────
+// ─── XIII PRODUCTION — two rows, scaled to new H ─────────────────────────────
 const XIII_PARTICLES: Pt3[] = [
-  // Row 1: XIII — larger, top position
-  ...word([mkX, mkI, mkI, mkI], H * 1.25, KERN * 1.25, 1.65),
-  // Row 2: PRODUCTION — smaller, bottom position
-  ...word([mkP, mkR, mkO, mkD, mkU, mkC, mkT, mkI, mkO, mkN], H * 0.75, KERN * 0.75, -1.45),
+  // Row 1: XIII — larger, elevated
+  ...word([mkX, mkI, mkI, mkI], H * 1.15, H * 1.15 * 0.72, H * 0.92),
+  // Row 2: PRODUCTION — slightly smaller, below
+  ...word([mkP, mkR, mkO, mkD, mkU, mkC, mkT, mkI, mkO, mkN], H * 0.70, H * 0.70 * 0.72, -H * 0.86),
 ]
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -215,14 +215,15 @@ export interface SocialLink {
   description: string[]
 }
 
+// FFX spiritual palette — pyreflies, souls, sacred energy
 export const socialLinks: SocialLink[] = [
   {
     id:          "instagram",
     label:       "Instagram",
     fullName:    "INSTAGRAM",
     url:         "",
-    color:       "#f472b6",
-    tint:        [0.957, 0.443, 0.714],
+    color:       "#4ab8ff",   // azure pyrefly blue
+    tint:        [0.28, 0.70, 1.00],
     particles:   INSTAGRAM_PARTICLES,
     description: ["Exploration visuelle", "Direction artistique", "Inspiration & recherches"],
   },
@@ -231,8 +232,8 @@ export const socialLinks: SocialLink[] = [
     label:       "LinkedIn",
     fullName:    "LINKEDIN",
     url:         "",
-    color:       "#38bdf8",
-    tint:        [0.22, 0.74, 0.973],
+    color:       "#2de8e8",   // aquamarine spirit
+    tint:        [0.18, 0.90, 0.90],
     particles:   LINKEDIN_PARTICLES,
     description: ["Parcours professionnel", "Expertise & savoir-faire", "Réseau & collaborations"],
   },
@@ -241,8 +242,8 @@ export const socialLinks: SocialLink[] = [
     label:       "XIII Production",
     fullName:    "XIII PRODUCTION",
     url:         "",
-    color:       "#fbbf24",
-    tint:        [0.984, 0.749, 0.141],
+    color:       "#d4a830",   // sacred amber gold
+    tint:        [0.84, 0.66, 0.18],
     particles:   XIII_PARTICLES,
     description: ["XIII Production", "Studio digital premium", "Expériences immersives"],
   },

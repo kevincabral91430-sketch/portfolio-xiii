@@ -5,86 +5,122 @@ import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 import type { SocialLink } from "@/lib/three/socialData"
 
-// ─── Vertex shader ────────────────────────────────────────────────────────────
+// ─── Vertex shader — pyrefly / spiritual souls ─────────────────────────────
 const vert = `
 uniform float uTime;
-uniform float uActive;      // 0→1: formation visible / transitioning
-uniform float uHover;       // 0→1: pointer is over this formation
-uniform vec2  uMousePos;    // cursor in world-space XY (z=0 plane)
-uniform float uMouseRad;    // flee radius in world units
-attribute float aOffset;    // per-particle random [0,1]
-attribute vec3  aTarget;    // resting position (formation shape)
+uniform float uActive;
+uniform float uHover;
+uniform vec2  uMousePos;
+uniform float uMouseRad;
+attribute float aOffset;
+attribute vec3  aTarget;
 varying float vAlpha;
-varying float vHover;       // passed to fragment to avoid shared-uniform precision mismatch
+varying float vHover;
+varying float vGlowSize;   // 0=tiny core spark, 1=wide ambient glow
 
 void main() {
-  // ── Resting position = formation shape ───────────────────────────────────
   vec3 pos = aTarget;
 
-  // ── Organic idle — two frequencies per axis ───────────────────────────────
-  float t   = uTime;
-  float ph  = aOffset * 6.2832;
-  pos.x += sin(t * 0.48 + ph)        * 0.038
-          + cos(t * 0.23 + ph * 1.7) * 0.018;
-  pos.y += cos(t * 0.41 + ph)        * 0.042
-          + sin(t * 0.19 + ph * 2.1) * 0.024;
-  pos.z += sin(t * 0.29 + ph * 0.8) * 0.020;
+  // ── Per-particle identity ──────────────────────────────────────────────────
+  // aOffset is uniform in [0,1]. We use it as a deterministic "soul type":
+  //   low  → dense core particles — small, bright, anchored close to target
+  //   high → ambient halo particles — larger, dimmer, wander more freely
+  float role = aOffset;
+  float ph   = role * 43.758 + 1.234;   // large spread → good pseudo-random phases
 
-  // ── Local cursor flee ─────────────────────────────────────────────────────
-  vec2  diff    = pos.xy - uMousePos;
-  float dist    = length(diff);
+  // ── Z-depth layer — creates real 3D cloud (no longer a flat plane) ─────────
+  float zLayer = (role * 2.0 - 1.0) * 0.65;  // ±0.65 world units of depth
+  pos.z += zLayer;
+
+  // ── Organic idle — two-frequency per axis, amplitude scales with role ──────
+  // core: barely moves (anchor the shape)
+  // ambient: drifts freely (alive, breathing)
+  float amp   = 0.030 + role * role * 0.170;  // 0.030 → 0.200 world units
+  float speed = 0.18  + role * 0.30;          // 0.18 → 0.48 rad/s
+
+  pos.x += sin(uTime * speed          + ph)           * amp
+          + cos(uTime * speed * 0.61  + ph * 1.732)  * amp * 0.52;
+  pos.y += cos(uTime * speed * 0.83   + ph)           * amp
+          + sin(uTime * speed * 0.41  + ph * 2.173)  * amp * 0.52;
+  pos.z += sin(uTime * speed * 0.53   + ph * 0.893)  * amp * 0.70;
+
+  // ── Cursor flee — perturb living cloud ────────────────────────────────────
+  vec2  diff = pos.xy - uMousePos;
+  float dist = length(diff);
   if (dist < uMouseRad && dist > 0.001) {
-    float f   = pow(1.0 - dist / uMouseRad, 2.2) * 2.4 * uActive;
-    pos.xy   += normalize(diff) * f;
-    pos.z    += f * 0.25;            // lift toward camera for depth
+    float f  = pow(1.0 - dist / uMouseRad, 2.0) * 2.2 * uActive;
+    pos.xy  += normalize(diff) * f;
+    pos.z   += f * 0.30;
   }
 
-  // ── Active transition: scatter to pseudo-random direction when uActive=0 ──
-  float scatter = (1.0 - uActive);
-  scatter       = scatter * scatter;   // ease²
-  float magnitude = scatter * (3.5 + aOffset * 3.0);
-  float dx = sin(aOffset * 127.1 + 311.7);
-  float dy = cos(aOffset * 269.5 + 183.3);
-  float dz = sin(aOffset * 419.2 +  75.8) * 0.4;
-  float dlen = sqrt(dx*dx + dy*dy + dz*dz) + 0.001;
-  pos += vec3(dx, dy, dz) / dlen * magnitude;
+  // ── Active transition: scatter then converge ───────────────────────────────
+  float sc  = 1.0 - uActive;
+  sc       *= sc;                              // ease²
+  float mag = sc * (4.0 + role * 4.5);        // ambient scatters further
+  float dx  = sin(role * 127.1 + 311.7);
+  float dy  = cos(role * 269.5 + 183.3);
+  float dz  = sin(role * 419.2 +  75.8) * 0.45;
+  float dl  = sqrt(dx*dx + dy*dy + dz*dz) + 0.001;
+  pos      += vec3(dx, dy, dz) / dl * mag;
 
-  // ── Hover: slight scale expansion + brightness signal ────────────────────
-  pos *= (1.0 + uHover * 0.04);
+  // ── Hover: subtle cloud expansion ─────────────────────────────────────────
+  pos *= (1.0 + uHover * 0.025);
 
   vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
   gl_Position = projectionMatrix * mvPos;
 
-  float baseSize = 2.4 + aOffset * 2.8;
-  float hoverBoost = 1.0 + uHover * 0.60;
-  float sz = baseSize * hoverBoost * (220.0 / -mvPos.z);
-  gl_PointSize = clamp(sz * uActive, 0.5, 18.0);
+  // ── Point size — small for core, larger for ambient ────────────────────────
+  // pyrefly feel: sizes range from tiny sparks to soft spherical glows
+  float pxScale  = 200.0 / -mvPos.z;
+  float baseSize = mix(1.2, 4.5, role);
+  float hBoost   = 1.0 + uHover * 0.40;
+  gl_PointSize   = clamp(baseSize * hBoost * pxScale * uActive, 0.3, 18.0);
 
-  vAlpha = uActive * (0.82 + aOffset * 0.18);
-  vHover = uHover;
+  // ── Twinkle — each soul pulses independently ───────────────────────────────
+  float twinkle = 0.68 + 0.32 * sin(uTime * (1.4 + role * 2.6) + ph * 3.7);
+
+  // ── Alpha — core bright, ambient soft ─────────────────────────────────────
+  float baseAlpha = mix(0.92, 0.42, role * role);
+  vAlpha     = uActive * baseAlpha * twinkle;
+  vHover     = uHover;
+  vGlowSize  = role;
 }
 `
 
-// ─── Fragment shader ──────────────────────────────────────────────────────────
+// ─── Fragment shader — soft pyrefly glow, zero neon ───────────────────────
 const frag = `
 uniform vec3  uColor;
 varying float vAlpha;
 varying float vHover;
+varying float vGlowSize;
 
 void main() {
-  vec2  c = gl_PointCoord - 0.5;
-  float d = length(c);
-  if (d > 0.5) discard;
+  vec2  c  = gl_PointCoord - 0.5;
+  float d2 = dot(c, c);
+  if (d2 > 0.25) discard;
 
-  // Bright core, wide diffuse halo
-  float core  = smoothstep(0.5, 0.0, d);
-  float halo  = exp(-d * 3.0) * (0.6 + vHover * 0.6);
-  float alpha = (core + halo) * vAlpha;
+  // ── Two-component glow: tiny sparkle core + wide soft halo ────────────────
+  //   core  → the visible individual spark (sharp gaussian, small radius)
+  //   halo  → the diffuse aura around it (wide gaussian, soft)
+  // Neither component goes to pure white — stays in the tint family.
+  float core = exp(-d2 * 180.0);              // ~1px bright center
+  float halo = exp(-d2 * (8.0 + vGlowSize * 6.0));  // varies: core=tight, ambient=wide
 
-  // Boost color: saturate toward white at core
-  vec3 brightColor = uColor * 2.2;
-  vec3 col = mix(brightColor, vec3(1.0), core * 0.5 * (1.0 - d * 2.0));
-  col += brightColor * halo * 0.4;
+  // ── Color — max brightness is 1.8× tint, never white ─────────────────────
+  //   halo: base tint color — the soul's inherent color
+  //   core: slightly elevated brightness in same hue family
+  vec3 tint    = uColor;
+  vec3 haloCol = tint * (0.85 + halo * 0.55);           // 0.85–1.40× tint
+  vec3 coreCol = tint * (1.00 + core * 0.80);           // up to 1.80× tint (rich, not white)
+
+  // Blend: mostly halo feel, accented by core spark
+  vec3 col = haloCol + coreCol * core * 0.35;
+
+  // Hover: slight color lift (no hue shift, just brightness)
+  col *= (1.0 + vHover * 0.25);
+
+  // ── Alpha from shape ──────────────────────────────────────────────────────
+  float alpha = (halo * 0.80 + core * 0.20) * vAlpha;
 
   gl_FragColor = vec4(col, alpha);
 }
@@ -92,14 +128,14 @@ void main() {
 
 interface SocialFormationProps {
   link: SocialLink
-  isActive: boolean         // this formation is the displayed one
+  isActive: boolean
   isHovered: boolean
   onHoverEnter: () => void
   onHoverLeave: () => void
   onClick: () => void
 }
 
-// Pre-allocated vectors for mouse projection (no GC in useFrame)
+// Pre-allocated vectors for mouse projection (zero GC in useFrame)
 const _vProj = new THREE.Vector3()
 const _dProj = new THREE.Vector3()
 const _mProj = new THREE.Vector3()
@@ -129,10 +165,10 @@ export default function SocialFormation({
 
   const uniforms = useMemo(() => ({
     uTime:     { value: 0 },
-    uActive:   { value: isActive ? 0 : 0 },   // starts at 0, lerps to target
+    uActive:   { value: 0 },
     uHover:    { value: 0 },
-    uMousePos: { value: new THREE.Vector2(9999, 9999) },  // off-screen by default
-    uMouseRad: { value: 2.6 },
+    uMousePos: { value: new THREE.Vector2(9999, 9999) },
+    uMouseRad: { value: 2.8 },
     uColor:    { value: new THREE.Vector3(...link.tint) },
   }), [link.tint])
 
@@ -140,17 +176,12 @@ export default function SocialFormation({
     if (!pointsRef.current) return
     const mat = pointsRef.current.material as THREE.ShaderMaterial
 
-    // Clock
     mat.uniforms.uTime.value = state.clock.elapsedTime
 
-    // Active lerp: smooth fade in/out (lambda 3.5 ≈ 45% per 0.167s frame → ~0.6s transition)
+    // Smooth active fade (lerp each frame — no getDelta() double-consume issue)
     const activeTarget = isActive ? 1.0 : 0.0
     mat.uniforms.uActive.value = THREE.MathUtils.lerp(
-      mat.uniforms.uActive.value, activeTarget, 1 - Math.exp(-3.5 * state.clock.getDelta())
-    )
-    // getDelta() consumes the delta — re-add
-    mat.uniforms.uActive.value = THREE.MathUtils.lerp(
-      mat.uniforms.uActive.value, activeTarget, 0.055
+      mat.uniforms.uActive.value, activeTarget, 0.045
     )
 
     // Hover lerp
@@ -158,36 +189,29 @@ export default function SocialFormation({
       mat.uniforms.uHover.value, isHovered ? 1.0 : 0.0, 0.08
     )
 
-    // Project mouse to world z=0 plane (no allocations)
+    // World-space mouse projection onto z=0 plane (no GC)
     if (isActive) {
       _vProj.set(state.pointer.x, state.pointer.y, 0.5).unproject(state.camera)
       _dProj.copy(_vProj).sub(state.camera.position).normalize()
       const camZ = state.camera.position.z
       if (Math.abs(_dProj.z) > 0.001) {
-        const dist = -camZ / _dProj.z
-        _mProj.copy(state.camera.position).addScaledVector(_dProj, dist)
+        const t = -camZ / _dProj.z
+        _mProj.copy(state.camera.position).addScaledVector(_dProj, t)
         mat.uniforms.uMousePos.value.set(_mProj.x, _mProj.y)
       }
     } else {
-      // Move mouse off-screen so flee doesn't fire when inactive
       mat.uniforms.uMousePos.value.set(9999, 9999)
     }
   })
 
-  // Don't render at all if fully invisible and inactive (perf)
-  const activeVal = (uniforms.uActive.value ?? 0)
-  const shouldRender = isActive || activeVal > 0.01
-
-  if (!shouldRender && !isActive) return null
+  // Only mount when active or still fading out (perf guard)
+  if (!isActive && (uniforms.uActive?.value ?? 0) < 0.01) return null
 
   return (
-    // Formation always centered at origin — nav controls switch which one is active
     <group position={[0, 0, 0]}>
       <points ref={pointsRef}>
         <bufferGeometry>
-          {/* aTarget carries the formation shape — immutable */}
           <bufferAttribute args={[positions, 3]} attach="attributes-aTarget" />
-          {/* position = same as target initially; shader reads aTarget, ignores position */}
           <bufferAttribute args={[positions, 3]} attach="attributes-position" />
           <bufferAttribute args={[offsets,   1]} attach="attributes-aOffset" />
         </bufferGeometry>
@@ -195,14 +219,13 @@ export default function SocialFormation({
           vertexShader={vert}
           fragmentShader={frag}
           uniforms={uniforms}
-          precision="highp"
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </points>
 
-      {/* Interaction hit zone — only active when isActive */}
+      {/* Hit zone — only when active */}
       {isActive && (
         <mesh
           onPointerEnter={(e) => {
@@ -220,7 +243,7 @@ export default function SocialFormation({
             onClick()
           }}
         >
-          <boxGeometry args={[14, 5, 1.5]} />
+          <boxGeometry args={[16, 6, 1.5]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} depthTest={false} />
         </mesh>
       )}
