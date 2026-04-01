@@ -48,11 +48,11 @@ export const cameraShots: Record<string, CameraShot> = {
     target: [-2, -11, -6],
     fov: 36,
   },
-  // Social chapter — frames all 3 formations (IN at -6, LN at 0, XIII at +7)
+  // Social chapter — single formation centered at origin, full word visible
   social: {
-    position: [0.5, 0, 17],
-    target: [0.5, 0, 0],
-    fov: 68,
+    position: [0, 0, 19],
+    target:   [0, 0, 0],
+    fov:      62,
   },
 }
 

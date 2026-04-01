@@ -15,12 +15,14 @@ interface ExperienceCanvasProps {
   activeChapter: Chapter
   chapterProgress: number
   onSocialHover: (id: string | null) => void
+  activeSocialIndex: number
 }
 
 export default function ExperienceCanvas({
   activeChapter,
   chapterProgress,
   onSocialHover,
+  activeSocialIndex,
 }: ExperienceCanvasProps) {
   const isSocialChapter = activeChapter.id === "social"
   const hasActiveWeapon = activeChapter.weaponId !== null
@@ -62,7 +64,10 @@ export default function ExperienceCanvas({
       ))}
 
       {isSocialChapter && (
-        <SocialScene onHoverChange={onSocialHover} />
+        <SocialScene
+          onHoverChange={onSocialHover}
+          activeSocialIndex={activeSocialIndex}
+        />
       )}
 
       <CameraRig

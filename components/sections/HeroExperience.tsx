@@ -35,10 +35,11 @@ function normalizeDelta(e: WheelEvent): number {
 }
 
 export default function HeroExperience() {
-  const [chapterIndex,    setChapterIndex]    = useState(0)
-  const [hoveredSocialId, setHoveredSocialId] = useState<string | null>(null)
-  // introComplete: false during camera travel, true once camera has settled
-  const [introComplete,   setIntroComplete]   = useState(false)
+  const [chapterIndex,      setChapterIndex]      = useState(0)
+  const [hoveredSocialId,   setHoveredSocialId]   = useState<string | null>(null)
+  const [introComplete,     setIntroComplete]     = useState(false)
+  // Social carousel navigation — which link is displayed
+  const [activeSocialIndex, setActiveSocialIndex] = useState(0)
 
   const chapterIndexRef    = useRef(0)
   const isLockedRef        = useRef(true)   // locked from the start — intro holds scroll
@@ -147,6 +148,13 @@ export default function HeroExperience() {
     setHoveredSocialId(id)
   }
 
+  // ─── Social nav helpers ───────────────────────────────────────────────────────
+  const SOCIAL_COUNT = 3   // must match socialLinks.length
+  const prevSocial = () =>
+    setActiveSocialIndex((i) => (i - 1 + SOCIAL_COUNT) % SOCIAL_COUNT)
+  const nextSocial = () =>
+    setActiveSocialIndex((i) => (i + 1) % SOCIAL_COUNT)
+
   // ─── Derived state ────────────────────────────────────────────────────────────
   const activeChapter   = chapters[chapterIndex]
   const isSocialChapter = activeChapter.id === "social"
@@ -171,6 +179,7 @@ export default function HeroExperience() {
           activeChapter={activeChapter}
           chapterProgress={0.5}
           onSocialHover={handleSocialHover}
+          activeSocialIndex={activeSocialIndex}
         />
       </div>
 
@@ -230,6 +239,119 @@ export default function HeroExperience() {
       {/* Sacred veil — dissolves into the 3D scene, removed from DOM once transparent */}
       <IntroVeil />
 
+      {/* Social carousel nav — shown only on social chapter after intro */}
+      {isSocialChapter && introComplete && (
+        <SocialNav
+          onPrev={prevSocial}
+          onNext={nextSocial}
+          activeIndex={activeSocialIndex}
+          total={SOCIAL_COUNT}
+          accentColor={accentColor}
+        />
+      )}
     </div>
   )
 }
+
+// ─── Social nav component — FFX-style carousel arrows + index dots ────────────
+const SOCIAL_LABELS = ["Instagram", "LinkedIn", "XIII Production"]
+
+function SocialNav({
+  onPrev, onNext, activeIndex, total, accentColor,
+}: {
+  onPrev: () => void
+  onNext: () => void
+  activeIndex: number
+  total: number
+  accentColor: string
+}) {
+  const hex = accentColor.replace("#", "")
+  const r   = parseInt(hex.slice(0, 2), 16)
+  const g   = parseInt(hex.slice(2, 4), 16)
+  const b   = parseInt(hex.slice(4, 6), 16)
+  const rgb = `${r},${g},${b}`
+
+  const btnBase: React.CSSProperties = {
+    position:        "relative",
+    display:         "flex",
+    alignItems:      "center",
+    justifyContent:  "center",
+    width:           "42px",
+    height:          "42px",
+    background:      `rgba(4,8,20,0.72)`,
+    border:          `1px solid rgba(${rgb},0.30)`,
+    borderTop:       `1px solid rgba(${rgb},0.60)`,
+    borderRadius:    "2px",
+    cursor:          "pointer",
+    backdropFilter:  "blur(8px)",
+    boxShadow:       `0 0 16px rgba(${rgb},0.08), 0 2px 0 rgba(${rgb},0.18) inset`,
+    transition:      "border-color 200ms, box-shadow 200ms",
+    flexShrink:      0,
+  }
+
+  return (
+    <div
+      style={{
+        position:       "fixed",
+        bottom:         "clamp(2.5rem, 5vh, 4rem)",
+        left:           "50%",
+        transform:      "translateX(-50%)",
+        zIndex:         25,
+        display:        "flex",
+        alignItems:     "center",
+        gap:            "1.2rem",
+        animation:      "socialNavFadeIn 0.6s cubic-bezier(0.22,1,0.36,1) both",
+      }}
+    >
+      {/* Left arrow */}
+      <button onClick={onPrev} style={btnBase} aria-label="Média précédent">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M8 1L3 6L8 11" stroke={accentColor} strokeWidth="1.4" strokeLinecap="square"/>
+        </svg>
+      </button>
+
+      {/* Centre: label + index dots */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.55rem" }}>
+        <span style={{
+          fontFamily:    "monospace",
+          fontSize:      "9px",
+          letterSpacing: "0.32em",
+          textTransform: "uppercase",
+          color:         `rgba(${rgb},0.70)`,
+          whiteSpace:    "nowrap",
+        }}>
+          {SOCIAL_LABELS[activeIndex]}
+        </span>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+          {Array.from({ length: total }).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                width:      i === activeIndex ? "16px" : "5px",
+                height:     "2px",
+                background: i === activeIndex ? accentColor : `rgba(${rgb},0.30)`,
+                borderRadius: "1px",
+                transition: "width 300ms cubic-bezier(0.22,1,0.36,1), background 300ms",
+              }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Right arrow */}
+      <button onClick={onNext} style={btnBase} aria-label="Média suivant">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M4 1L9 6L4 11" stroke={accentColor} strokeWidth="1.4" strokeLinecap="square"/>
+        </svg>
+      </button>
+
+      <style>{`
+        @keyframes socialNavFadeIn {
+          from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+      `}</style>
+    </div>
+  )
+}
+
