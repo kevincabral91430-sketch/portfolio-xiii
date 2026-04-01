@@ -20,7 +20,7 @@ function arc(cx: number, cy: number, rx: number, ry: number, a0: number, a1: num
 }
 
 // ─── Letter builders (h = glyph height, centered at cx,cy) ───────────────────
-const D = 6   // density scalar — 6 gives individually visible pyrefly sparks
+const D = 10  // density scalar — 10 gives rich living matter without additive saturation
 
 function mkI(cx: number, cy: number, h: number): Pt3[] {
   const sw = h * 0.22, hh = h * 0.5
