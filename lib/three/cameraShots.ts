@@ -52,7 +52,7 @@ export const cameraShots: Record<string, CameraShot> = {
   social: {
     position: [0, 0, 16],
     target:   [0, 0, 0],
-    fov:      55,
+    fov:      60,
   },
 }
 

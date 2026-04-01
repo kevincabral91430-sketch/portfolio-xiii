@@ -20,7 +20,7 @@ function arc(cx: number, cy: number, rx: number, ry: number, a0: number, a1: num
 }
 
 // ─── Letter builders (h = glyph height, centered at cx,cy) ───────────────────
-const D = 18  // density scalar — 18 gives rich pyrefly clouds
+const D = 6   // density scalar — 6 gives individually visible pyrefly sparks
 
 function mkI(cx: number, cy: number, h: number): Pt3[] {
   const sw = h * 0.22, hh = h * 0.5
@@ -178,7 +178,7 @@ function mkH(cx: number, cy: number, h: number): Pt3[] {
 }
 
 // ─── Word composition ─────────────────────────────────────────────────────────
-const H    = 2.4             // glyph height in world units — monumental presence
+const H    = 2.8             // glyph height in world units — monumental presence
 const KERN = H * 0.72        // letter spacing
 
 type LetterFn = (cx: number, cy: number, h: number) => Pt3[]

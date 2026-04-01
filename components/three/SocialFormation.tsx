@@ -16,35 +16,44 @@ attribute float aOffset;
 attribute vec3  aTarget;
 varying float vAlpha;
 varying float vHover;
-varying float vGlowSize;   // 0=tiny core spark, 1=wide ambient glow
+varying float vGlowSize;
 
 void main() {
   vec3 pos = aTarget;
 
   // ── Per-particle identity ──────────────────────────────────────────────────
-  // aOffset is uniform in [0,1]. We use it as a deterministic "soul type":
-  //   low  → dense core particles — small, bright, anchored close to target
-  //   high → ambient halo particles — larger, dimmer, wander more freely
+  // aOffset is hash-distributed in [0,1] — every letter has a full mix of roles.
+  //   low  → core sparks: small, bright, anchored close to letter
+  //   high → ambient souls: larger, dimmer, wander around the word cloud
   float role = aOffset;
-  float ph   = role * 43.758 + 1.234;   // large spread → good pseudo-random phases
+  float ph   = role * 43.758 + 1.234;
 
-  // ── Z-depth layer — creates real 3D cloud (no longer a flat plane) ─────────
-  float zLayer = (role * 2.0 - 1.0) * 0.65;  // ±0.65 world units of depth
+  // ── Z-depth layer — real 3D soul cloud ────────────────────────────────────
+  float zLayer = (role * 2.0 - 1.0) * 0.65;
   pos.z += zLayer;
 
-  // ── Organic idle — two-frequency per axis, amplitude scales with role ──────
-  // core: barely moves (anchor the shape)
-  // ambient: drifts freely (alive, breathing)
-  float amp   = 0.030 + role * role * 0.170;  // 0.030 → 0.200 world units
-  float speed = 0.18  + role * 0.30;          // 0.18 → 0.48 rad/s
+  // ── Organic idle — two-frequency Lissajous, amplitude grows with role ──────
+  float amp   = 0.04 + role * role * 0.24;   // 0.04 → 0.28 world units
+  float speed = 0.16 + role * 0.28;          // 0.16 → 0.44 rad/s
 
-  pos.x += sin(uTime * speed          + ph)           * amp
-          + cos(uTime * speed * 0.61  + ph * 1.732)  * amp * 0.52;
-  pos.y += cos(uTime * speed * 0.83   + ph)           * amp
-          + sin(uTime * speed * 0.41  + ph * 2.173)  * amp * 0.52;
-  pos.z += sin(uTime * speed * 0.53   + ph * 0.893)  * amp * 0.70;
+  pos.x += sin(uTime * speed          + ph)          * amp
+          + cos(uTime * speed * 0.61  + ph * 1.732) * amp * 0.52;
+  pos.y += cos(uTime * speed * 0.83   + ph)          * amp
+          + sin(uTime * speed * 0.41  + ph * 2.173) * amp * 0.52;
+  pos.z += sin(uTime * speed * 0.53   + ph * 0.893) * amp * 0.70;
 
-  // ── Cursor flee — perturb living cloud ────────────────────────────────────
+  // ── Ambient scatter — high-role souls float outward around the word ────────
+  float ambient = max(0.0, (role - 0.65) / 0.35);
+  if (ambient > 0.001) {
+    float r1  = fract(sin(role * 127.1 + 311.7) * 43758.5);
+    float r2  = fract(sin(role * 269.5 + 183.3) * 53748.1);
+    float ang = r1 * 6.2832;
+    float rad = (0.4 + r2 * 1.4) * ambient;
+    pos.xy   += vec2(cos(ang), sin(ang)) * rad;
+    pos.z    += (r1 * 2.0 - 1.0) * 0.9 * ambient;
+  }
+
+  // ── Cursor flee — living cloud disturbed by pointer ────────────────────────
   vec2  diff = pos.xy - uMousePos;
   float dist = length(diff);
   if (dist < uMouseRad && dist > 0.001) {
@@ -53,10 +62,10 @@ void main() {
     pos.z   += f * 0.30;
   }
 
-  // ── Active transition: scatter then converge ───────────────────────────────
+  // ── Entry: scatter then converge ──────────────────────────────────────────
   float sc  = 1.0 - uActive;
-  sc       *= sc;                              // ease²
-  float mag = sc * (4.0 + role * 4.5);        // ambient scatters further
+  sc       *= sc;
+  float mag = sc * (4.0 + role * 4.5);
   float dx  = sin(role * 127.1 + 311.7);
   float dy  = cos(role * 269.5 + 183.3);
   float dz  = sin(role * 419.2 +  75.8) * 0.45;
@@ -64,30 +73,30 @@ void main() {
   pos      += vec3(dx, dy, dz) / dl * mag;
 
   // ── Hover: subtle cloud expansion ─────────────────────────────────────────
-  pos *= (1.0 + uHover * 0.025);
+  pos *= (1.0 + uHover * 0.03);
 
   vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
   gl_Position = projectionMatrix * mvPos;
 
-  // ── Point size — small for core, larger for ambient ────────────────────────
-  // pyrefly feel: sizes range from tiny sparks to soft spherical glows
+  // ── Point size — core=small spark, ambient=wider soft sphere ──────────────
   float pxScale  = 200.0 / -mvPos.z;
-  float baseSize = mix(1.2, 4.5, role);
-  float hBoost   = 1.0 + uHover * 0.40;
-  gl_PointSize   = clamp(baseSize * hBoost * pxScale * uActive, 0.3, 18.0);
+  float baseSize = mix(0.48, 1.6, role);
+  float hBoost   = 1.0 + uHover * 0.35;
+  gl_PointSize   = clamp(baseSize * hBoost * pxScale * uActive, 0.0, 20.0);
 
-  // ── Twinkle — each soul pulses independently ───────────────────────────────
-  float twinkle = 0.68 + 0.32 * sin(uTime * (1.4 + role * 2.6) + ph * 3.7);
+  // ── Twinkle — every soul pulses at its own frequency ──────────────────────
+  float tFreq   = 1.4 + role * 2.6;
+  float twinkle = 0.45 + 0.55 * (0.5 + 0.5 * sin(uTime * tFreq + ph * 4.2));
 
-  // ── Alpha — core bright, ambient soft ─────────────────────────────────────
-  float baseAlpha = mix(0.92, 0.42, role * role);
-  vAlpha     = uActive * baseAlpha * twinkle;
+  // ── Alpha — core visible, ambient ethereal; low enough to stay individual ──
+  float baseAlpha = mix(0.50, 0.12, role);
+  vAlpha     = uActive * baseAlpha * clamp(twinkle, 0.0, 1.0);
   vHover     = uHover;
   vGlowSize  = role;
 }
 `
 
-// ─── Fragment shader — soft pyrefly glow, zero neon ───────────────────────
+// ─── Fragment shader — pure soft gaussian, zero neon ──────────────────────
 const frag = `
 uniform vec3  uColor;
 varying float vAlpha;
@@ -99,29 +108,19 @@ void main() {
   float d2 = dot(c, c);
   if (d2 > 0.25) discard;
 
-  // ── Two-component glow: tiny sparkle core + wide soft halo ────────────────
-  //   core  → the visible individual spark (sharp gaussian, small radius)
-  //   halo  → the diffuse aura around it (wide gaussian, soft)
-  // Neither component goes to pure white — stays in the tint family.
-  float core = exp(-d2 * 180.0);              // ~1px bright center
-  float halo = exp(-d2 * (8.0 + vGlowSize * 6.0));  // varies: core=tight, ambient=wide
+  // ── Single soft gaussian — width varies with role ─────────────────────────
+  //   core  (role→0): k=10 → tight warm spark
+  //   ambient (role→1): k=5  → wide diffuse soul glow
+  float k    = 10.0 - vGlowSize * 5.0;
+  float glow = exp(-d2 * k);
 
-  // ── Color — max brightness is 1.8× tint, never white ─────────────────────
-  //   halo: base tint color — the soul's inherent color
-  //   core: slightly elevated brightness in same hue family
-  vec3 tint    = uColor;
-  vec3 haloCol = tint * (0.85 + halo * 0.55);           // 0.85–1.40× tint
-  vec3 coreCol = tint * (1.00 + core * 0.80);           // up to 1.80× tint (rich, not white)
+  // ── Color — max 1.35× tint, never white ──────────────────────────────────
+  vec3 col = uColor * (0.85 + glow * 0.50);
 
-  // Blend: mostly halo feel, accented by core spark
-  vec3 col = haloCol + coreCol * core * 0.35;
+  // Hover: slight brightness lift only
+  col *= (1.0 + vHover * 0.20);
 
-  // Hover: slight color lift (no hue shift, just brightness)
-  col *= (1.0 + vHover * 0.25);
-
-  // ── Alpha from shape ──────────────────────────────────────────────────────
-  float alpha = (halo * 0.80 + core * 0.20) * vAlpha;
-
+  float alpha = glow * vAlpha;
   gl_FragColor = vec4(col, alpha);
 }
 `
@@ -158,7 +157,9 @@ export default function SocialFormation({
       pos[i * 3]     = x
       pos[i * 3 + 1] = y
       pos[i * 3 + 2] = z
-      off[i] = i / Math.max(n - 1, 1)
+      // Hash-based offset: every letter gets a full mix of core + ambient roles
+      // (sequential i/(n-1) would make last letters all-ambient → illegible)
+      off[i] = Math.abs(Math.sin(i * 127.1 + 311.7) * 43758.5453) % 1.0
     })
     return { positions: pos, offsets: off }
   }, [link.particles])
@@ -181,7 +182,7 @@ export default function SocialFormation({
     // Smooth active fade (lerp each frame — no getDelta() double-consume issue)
     const activeTarget = isActive ? 1.0 : 0.0
     mat.uniforms.uActive.value = THREE.MathUtils.lerp(
-      mat.uniforms.uActive.value, activeTarget, 0.045
+      mat.uniforms.uActive.value, activeTarget, 0.065
     )
 
     // Hover lerp
@@ -203,9 +204,6 @@ export default function SocialFormation({
       mat.uniforms.uMousePos.value.set(9999, 9999)
     }
   })
-
-  // Only mount when active or still fading out (perf guard)
-  if (!isActive && (uniforms.uActive?.value ?? 0) < 0.01) return null
 
   return (
     <group position={[0, 0, 0]}>
