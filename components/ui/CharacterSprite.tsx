@@ -25,11 +25,15 @@ export default function CharacterSprite({ config, startFrame = 0, animated = tru
   // ── Derived display geometry ─────────────────────────────────────────────
   const nativeFrameW = config.sheetW / config.cols
   const nativeFrameH = config.sheetH / config.rows
-  const scale        = config.displayH / nativeFrameH
+  // When displayW is set, scale is driven by width → all frames exactly displayW px wide.
+  // Otherwise scale is driven by height (default behaviour).
+  const scale = config.displayW !== undefined
+    ? config.displayW / nativeFrameW
+    : config.displayH / nativeFrameH
 
   // All pixel values for the scaled display
   const displayFrameW = Math.round(nativeFrameW * scale)
-  const displayFrameH = Math.round(config.displayH)
+  const displayFrameH = Math.round(nativeFrameH * scale)
   const displaySheetW = Math.round(config.sheetW * scale)
   const displaySheetH = Math.round(config.sheetH * scale)
 

@@ -12,12 +12,11 @@ interface NavCharactersProps {
 }
 
 // ── Slot dimensions — every character occupies the same bounding box ─────────
-// SLOT_W is wide enough to accommodate the widest sprite (Tidus: 97px).
-// SLOT_H matches the uniform displayH used in characterSprites.ts (60px).
-// Centering within the slot means the column is perfectly stable regardless
-// of how wide each individual character's frame happens to be.
-const SLOT_W = 100  // px — fits all sprites (Tidus 97px, Kimahri 48px, …)
-const SLOT_H = 60   // px — matches displayH; all sprites are this tall
+// displayW: 100 is forced on all sprites → all exactly 100px wide.
+// Heights vary by character aspect ratio (62px Tidus → 126px Kimahri).
+// SLOT_H accommodates the tallest (Kimahri: 126px) so nothing is clipped.
+const SLOT_W = 100  // px — matches forced displayW in characterSprites.ts
+const SLOT_H = 130  // px — tall enough for Kimahri (126px) + 2px margin
 
 /**
  * Replaces NavDots — each chapter's navigation "dot" is now the character's

@@ -18,8 +18,14 @@ export interface SpriteConfig {
   frameCount: number
   /** Animation speed in frames per second */
   fps: number
-  /** Target display height in pixels (nav size, approximately native height) */
+  /** Target display height in pixels — scale is derived from this */
   displayH: number
+  /**
+   * Optional forced display width in pixels.
+   * When set, scale is derived from width instead of height.
+   * Height is then computed proportionally (may exceed displayH).
+   */
+  displayW?: number
 }
 
 const BASE = "/assets/Personnages"
@@ -33,62 +39,62 @@ export const characterSprites: Record<string, SpriteConfig> = {
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Tidus/Tidus (7)/210000107_idle.png`,
     sheetW: 321, sheetH: 132,
     cols: 3, rows: 2,
-    frameCount: 4,   // verified: 3(row0)+1(row1), slots r1c1 and r1c2 are blank
+    frameCount: 4,
     fps: 8,
-    displayH: 60,    // native 66px → 0.91× scale → 97px wide
+    displayH: 60, displayW: 100,  // forced 100px wide → 62px tall (slight downscale, native 107px)
   },
   yuna: {
     characterId: "yuna",
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Yuna/Yuna (7)/210000207_idle.png`,
     sheetW: 246, sheetH: 152,
-    cols: 3, rows: 2, // cols was 2 (wrong: showed mix of 2 frames at once) → 246÷3=82px ✓
-    frameCount: 4,   // verified: 3(row0)+1(row1), pixels confined to x:0-82 in bottom row
+    cols: 3, rows: 2,
+    frameCount: 4,
     fps: 8,
-    displayH: 60,    // native 76px → 0.79× scale → 65px wide per frame
+    displayH: 60, displayW: 100,  // forced 100px wide → 93px tall (upscale, native 82px)
   },
   auron: {
     characterId: "auron",
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Auron (1)/Auron/Auron (7)/unit_idle_210000607.png`,
     sheetW: 231, sheetH: 150,
-    cols: 3, rows: 2, // cols was 2 (wrong: 231÷2=115.5 non-integer) → 231÷3=77px ✓
-    frameCount: 4,   // verified: 3(row0)+1(row1), slots r1c1 and r1c2 are blank
+    cols: 3, rows: 2,
+    frameCount: 4,
     fps: 8,
-    displayH: 60,    // native 75px → 0.80× scale → 62px wide per frame
+    displayH: 60, displayW: 100,  // forced 100px wide → 97px tall (upscale, native 77px)
   },
   wakka: {
     characterId: "wakka",
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Wakka/Wakka/Wakka (6)/210000306_idle.png`,
     sheetW: 261, sheetH: 178,
     cols: 3, rows: 2,
-    frameCount: 4,   // verified: 3(row0)+1(row1), slots r1c1 and r1c2 are blank
+    frameCount: 4,
     fps: 8,
-    displayH: 60,    // native 89px → 0.67× scale → 58px wide (squarish frame)
+    displayH: 60, displayW: 100,  // forced 100px wide → 102px tall (upscale, native 87px)
   },
   lulu: {
     characterId: "lulu",
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Lulu/Lulu (7)/210000407_idle.png`,
     sheetW: 300, sheetH: 148,
-    cols: 3, rows: 2, // cols was 2 (wrong: showed mix of 2 frames at once) → 300÷3=100px ✓
-    frameCount: 4,   // verified: 3(row0)+1(row1), pixels confined to x:0-100 in bottom row
+    cols: 3, rows: 2,
+    frameCount: 4,
     fps: 8,
-    displayH: 60,    // native 74px → 0.81× scale → 81px wide per frame (wings fit cleanly)
+    displayH: 60, displayW: 100,  // forced 100px wide → 74px tall (exact 1× scale, native 100px)
   },
   rikku: {
     characterId: "rikku",
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Rikku/Rikku (6)/210000706_idle.png`,
     sheetW: 228, sheetH: 126,
     cols: 3, rows: 2,
-    frameCount: 4,   // 3 top + 1 bottom, last 2 slots blank
+    frameCount: 4,
     fps: 8,
-    displayH: 60,    // native 63px → 0.95× scale → 72px wide
+    displayH: 60, displayW: 100,  // forced 100px wide → 83px tall (upscale, native 76px)
   },
   kimahri: {
     characterId: "kimahri",
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Kimahri/Kimahri/Kimahri (7)/unit_idle_210000507.png`,
     sheetW: 279, sheetH: 351,
     cols: 3, rows: 3,
-    frameCount: 8,   // 3+3+2 grid, last slot is blank
+    frameCount: 8,
     fps: 8,
-    displayH: 60,    // native 117px → 0.51× scale → 48px wide (portrait frame)
+    displayH: 60, displayW: 100,  // forced 100px wide → 126px tall (slight upscale, native 93px)
   },
 }
