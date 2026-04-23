@@ -33,7 +33,7 @@ export const characterSprites: Record<string, SpriteConfig> = {
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Tidus/Tidus (7)/210000107_idle.png`,
     sheetW: 321, sheetH: 132,
     cols: 3, rows: 2,
-    frameCount: 5,   // 3+2 grid, last slot of row 2 is blank
+    frameCount: 4,   // verified: 3(row0)+1(row1), slots r1c1 and r1c2 are blank
     fps: 8,
     displayH: 60,    // native 66px → 0.91× scale → 97px wide
   },
@@ -42,7 +42,7 @@ export const characterSprites: Record<string, SpriteConfig> = {
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Yuna/Yuna (7)/210000207_idle.png`,
     sheetW: 246, sheetH: 152,
     cols: 2, rows: 2,
-    frameCount: 4,
+    frameCount: 3,   // verified: 2(row0)+1(row1), slot r1c1 is blank
     fps: 8,
     displayH: 60,    // native 76px → 0.79× scale → 97px wide
   },
@@ -50,17 +50,17 @@ export const characterSprites: Record<string, SpriteConfig> = {
     characterId: "auron",
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Auron (1)/Auron/Auron (7)/unit_idle_210000607.png`,
     sheetW: 231, sheetH: 150,
-    cols: 2, rows: 2,
-    frameCount: 4,
+    cols: 3, rows: 2, // cols was 2 (wrong: 231÷2=115.5 non-integer) → 231÷3=77px ✓
+    frameCount: 4,   // verified: 3(row0)+1(row1), slots r1c1 and r1c2 are blank
     fps: 8,
-    displayH: 60,    // native 75px → 0.80× scale → 92px wide
+    displayH: 60,    // native 75px → 0.80× scale → 62px wide per frame
   },
   wakka: {
     characterId: "wakka",
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Wakka/Wakka/Wakka (6)/210000306_idle.png`,
     sheetW: 261, sheetH: 178,
     cols: 3, rows: 2,
-    frameCount: 5,   // 3+2 grid, last slot is blank
+    frameCount: 4,   // verified: 3(row0)+1(row1), slots r1c1 and r1c2 are blank
     fps: 8,
     displayH: 60,    // native 89px → 0.67× scale → 58px wide (squarish frame)
   },
@@ -69,7 +69,7 @@ export const characterSprites: Record<string, SpriteConfig> = {
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Lulu/Lulu (7)/210000407_idle.png`,
     sheetW: 300, sheetH: 148,
     cols: 2, rows: 2,
-    frameCount: 4,
+    frameCount: 3,   // verified: 2(row0)+1(row1), slot r1c1 is blank
     fps: 8,
     displayH: 48,    // native 74px → 0.65× → 97px wide (wide wings, constrained)
   },
