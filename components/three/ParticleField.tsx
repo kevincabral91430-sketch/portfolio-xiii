@@ -4,7 +4,7 @@ import { useRef, useMemo } from "react"
 import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 
-const PARTICLE_COUNT = 600
+const PARTICLE_COUNT = 1500
 
 const particleVertexShader = `
 uniform float uTime;
@@ -16,8 +16,8 @@ varying float vWarmth;
 void main() {
   vec3 pos = position;
 
-  // Two-frequency drift — slower than before, more dreamlike (pyrefly pace)
-  float yProgress = mod(pos.y + uTime * aSpeed * 0.24 + aOffset * 20.0, 20.0) - 10.0;
+  // Two-frequency drift — wraps across the full scene height (±16)
+  float yProgress = mod(pos.y + uTime * aSpeed * 0.24 + aOffset * 32.0, 32.0) - 16.0;
   pos.y = yProgress;
 
   pos.x += sin(uTime * aSpeed * 0.18 + aOffset * 6.28) * 0.88
@@ -34,7 +34,7 @@ void main() {
   gl_PointSize = clamp(gl_PointSize, 0.4, 3.8);
 
   // Twinkle — each pyrefly breathes at its own rhythm
-  float fadeY   = 1.0 - abs(yProgress / 10.0);
+  float fadeY   = 1.0 - abs(yProgress / 16.0);
   float twinkle = sin(uTime * (1.4 + aOffset * 2.8) + aOffset * 7.5) * 0.32 + 0.68;
   vAlpha = fadeY * (0.18 + aOffset * 0.42) * twinkle;
 
@@ -75,9 +75,9 @@ export default function ParticleField() {
     const speeds    = new Float32Array(PARTICLE_COUNT)
 
     for (let i = 0; i < PARTICLE_COUNT; i++) {
-      positions[i * 3]     = (Math.random() - 0.5) * 24
-      positions[i * 3 + 1] = (Math.random() - 0.5) * 20
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 16 - 4
+      positions[i * 3]     = (Math.random() - 0.5) * 48   // ±24 — couvre toutes les armes (max ±16)
+      positions[i * 3 + 1] = (Math.random() - 0.5) * 32   // ±16 — couvre la hauteur totale (Kimahri à y=-11)
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 18 - 6  // -15 à +3 — derrière toutes les armes
 
       offsets[i] = Math.random()
       speeds[i]  = 0.24 + Math.random() * 0.55   // slightly slower than before (was 0.28 + 0.65)
