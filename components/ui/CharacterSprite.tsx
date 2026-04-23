@@ -7,6 +7,11 @@ interface CharacterSpriteProps {
   config: SpriteConfig
   /** Frame to start on — stagger across characters so they're not in sync */
   startFrame?: number
+  /**
+   * When false the animation loop is stopped entirely and a fixed frame is shown.
+   * Saves CPU/GC for all non-active characters. Defaults to true.
+   */
+  animated?: boolean
 }
 
 /**
@@ -14,7 +19,7 @@ interface CharacterSpriteProps {
  * Clips the sprite sheet to show one frame at a time by shifting an <img> inside
  * an overflow:hidden container. Image-rendering: pixelated keeps the art crisp.
  */
-export default function CharacterSprite({ config, startFrame = 0 }: CharacterSpriteProps) {
+export default function CharacterSprite({ config, startFrame = 0, animated = true }: CharacterSpriteProps) {
   const imgRef = useRef<HTMLImageElement>(null)
 
   // ── Derived display geometry ─────────────────────────────────────────────
@@ -33,24 +38,29 @@ export default function CharacterSprite({ config, startFrame = 0 }: CharacterSpr
     const img = imgRef.current
     if (!img) return
 
-    let frame = ((startFrame % config.frameCount) + config.frameCount) % config.frameCount
-
-    const setFrame = (f: number) => {
+    const positionFrame = (f: number) => {
       const col = f % config.cols
       const row = Math.floor(f / config.cols)
       img.style.left = `${-(col * displayFrameW)}px`
       img.style.top  = `${-(row * displayFrameH)}px`
     }
 
-    setFrame(frame)
+    // Inactive: pin to frame 0, no interval
+    if (!animated) {
+      positionFrame(0)
+      return
+    }
+
+    let frame = ((startFrame % config.frameCount) + config.frameCount) % config.frameCount
+    positionFrame(frame)
 
     const id = setInterval(() => {
       frame = (frame + 1) % config.frameCount
-      setFrame(frame)
+      positionFrame(frame)
     }, 1000 / config.fps)
 
     return () => clearInterval(id)
-  }, [config, startFrame, displayFrameW, displayFrameH])
+  }, [config, startFrame, animated, displayFrameW, displayFrameH])
 
   return (
     <div

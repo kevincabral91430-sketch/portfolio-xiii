@@ -81,6 +81,7 @@ export default function NavCharacters({
             <CharacterSprite
               config={sprite}
               startFrame={i * 3}   // stagger so characters aren't synced
+              animated={isActive}  // only the selected character animates
             />
           </div>
         )

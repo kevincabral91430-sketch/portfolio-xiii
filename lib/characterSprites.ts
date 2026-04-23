@@ -41,10 +41,10 @@ export const characterSprites: Record<string, SpriteConfig> = {
     characterId: "yuna",
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Yuna/Yuna (7)/210000207_idle.png`,
     sheetW: 246, sheetH: 152,
-    cols: 2, rows: 2,
-    frameCount: 3,   // verified: 2(row0)+1(row1), slot r1c1 is blank
+    cols: 3, rows: 2, // cols was 2 (wrong: showed mix of 2 frames at once) → 246÷3=82px ✓
+    frameCount: 4,   // verified: 3(row0)+1(row1), pixels confined to x:0-82 in bottom row
     fps: 8,
-    displayH: 60,    // native 76px → 0.79× scale → 97px wide
+    displayH: 60,    // native 76px → 0.79× scale → 65px wide per frame
   },
   auron: {
     characterId: "auron",
@@ -68,10 +68,10 @@ export const characterSprites: Record<string, SpriteConfig> = {
     characterId: "lulu",
     src: `${BASE}/Mobile - Final Fantasy_ Brave Exvius - Characters_ Final Fantasy X _ X-2 - Lulu/Lulu (7)/210000407_idle.png`,
     sheetW: 300, sheetH: 148,
-    cols: 2, rows: 2,
-    frameCount: 3,   // verified: 2(row0)+1(row1), slot r1c1 is blank
+    cols: 3, rows: 2, // cols was 2 (wrong: showed mix of 2 frames at once) → 300÷3=100px ✓
+    frameCount: 4,   // verified: 3(row0)+1(row1), pixels confined to x:0-100 in bottom row
     fps: 8,
-    displayH: 48,    // native 74px → 0.65× → 97px wide (wide wings, constrained)
+    displayH: 60,    // native 74px → 0.81× scale → 81px wide per frame (wings fit cleanly)
   },
   rikku: {
     characterId: "rikku",
