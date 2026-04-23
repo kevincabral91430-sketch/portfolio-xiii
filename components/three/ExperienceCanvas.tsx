@@ -3,6 +3,7 @@
 import { Canvas } from "@react-three/fiber"
 import * as THREE from "three"
 import WeaponSprite from "./WeaponSprite"
+import WeaponAura from "./WeaponAura"
 import CameraRig from "./CameraRig"
 import ParticleField from "./ParticleField"
 import AbyssBackground from "./AbyssBackground"
@@ -52,6 +53,15 @@ export default function ExperienceCanvas({
       <AbyssBackground />
       <LightNappes />
       <ParticleField />
+
+      {weapons.map((weapon) => (
+        <WeaponAura
+          key={`aura-${weapon.id}`}
+          weapon={weapon}
+          isActive={activeChapter.weaponId === weapon.id}
+          isSocialChapter={isSocialChapter}
+        />
+      ))}
 
       {weapons.map((weapon) => (
         <WeaponSprite
