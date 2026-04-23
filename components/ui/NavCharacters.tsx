@@ -11,12 +11,11 @@ interface NavCharactersProps {
   onChapterSelect?: (chapterId: string) => void
 }
 
-// ── Slot dimensions — every character occupies the same bounding box ─────────
-// displayW: 100 is forced on all sprites → all exactly 100px wide.
-// Heights vary by character aspect ratio (62px Tidus → 126px Kimahri).
-// SLOT_H accommodates the tallest (Kimahri: 126px) so nothing is clipped.
-const SLOT_W = 100  // px — matches forced displayW in characterSprites.ts
-const SLOT_H = 130  // px — tall enough for Kimahri (126px) + 2px margin
+// ── Slot width — every character is centered in the same fixed-width column ──
+// Width is fixed (100px) so the column never shifts horizontally.
+// Height is NOT fixed — each sprite uses its natural displayH (or displayW-derived)
+// height, so Kimahri (forced to 80px wide → 101px tall) takes more vertical space.
+const SLOT_W = 100  // px — wide enough for Tidus (97px), Kimahri forced to 80px
 
 /**
  * Replaces NavDots — each chapter's navigation "dot" is now the character's
@@ -85,16 +84,12 @@ export default function NavCharacters({
               if (e.key === "Enter" || e.key === " ") onChapterSelect?.(chapter.id)
             }}
           >
-            {/* Fixed-size slot: every sprite is centered in the same box.
-                overflow:hidden clips the rare 1-2px overshoot (Tidus sword tip). */}
+            {/* Fixed-width slot: column stays stable, sprite height is natural. */}
             <div
               style={{
                 width:          SLOT_W,
-                height:         SLOT_H,
                 display:        "flex",
-                alignItems:     "center",
                 justifyContent: "center",
-                overflow:       "hidden",
               }}
             >
               <CharacterSprite
