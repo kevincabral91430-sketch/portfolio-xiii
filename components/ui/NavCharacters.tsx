@@ -11,13 +11,22 @@ interface NavCharactersProps {
   onChapterSelect?: (chapterId: string) => void
 }
 
+// ── Slot dimensions — every character occupies the same bounding box ─────────
+// SLOT_W is wide enough to accommodate the widest sprite (Tidus: 97px).
+// SLOT_H matches the uniform displayH used in characterSprites.ts (60px).
+// Centering within the slot means the column is perfectly stable regardless
+// of how wide each individual character's frame happens to be.
+const SLOT_W = 100  // px — fits all sprites (Tidus 97px, Kimahri 48px, …)
+const SLOT_H = 60   // px — matches displayH; all sprites are this tall
+
 /**
  * Replaces NavDots — each chapter's navigation "dot" is now the character's
  * animated idle sprite. Active character scales up with a colored glow.
  * Inactive characters are dimmed and smaller. Hover adds a neutral lift.
  *
  * Positioning: right-aligned fixed column, vertically centered.
- * Sprites are right-edge-anchored so width variation doesn't shift the column.
+ * Each sprite lives inside a fixed SLOT_W × SLOT_H box so the column
+ * never shifts regardless of individual frame widths.
  */
 export default function NavCharacters({
   activeChapterId,
@@ -30,7 +39,7 @@ export default function NavCharacters({
 
   return (
     <nav
-      className="fixed right-4 top-1/2 z-30 flex -translate-y-1/2 flex-col items-end gap-1"
+      className="fixed right-4 top-1/2 z-30 flex -translate-y-1/2 flex-col items-end gap-2"
       aria-label="Navigation chapitres"
     >
       {visibleChapters.map((chapter, i) => {
@@ -41,8 +50,8 @@ export default function NavCharacters({
         if (!sprite) return null
 
         // ── Visual state ─────────────────────────────────────────────────
-        // Active  : full opacity, 1.35× scale, accent glow
-        // Hovered : 70% opacity, 1.12× scale, soft white lift
+        // Active  : full opacity, 1.20× scale, accent glow
+        // Hovered : 70% opacity, 1.08× scale, soft white lift
         // Idle    : 38% opacity, 1× scale, no glow
         const opacity   = isActive ? 1 : isHovered ? 0.70 : 0.38
         const scaleVal  = isActive ? 1.20 : isHovered ? 1.08 : 1.0
@@ -67,7 +76,6 @@ export default function NavCharacters({
               opacity,
               filter:          filterVal,
               transition:      "transform 350ms cubic-bezier(0.34,1.56,0.64,1), opacity 300ms ease, filter 300ms ease",
-              // Ensure the active character doesn't push others — keep layout stable
               marginBottom:    isActive ? 4 : 0,
               marginTop:       isActive ? 4 : 0,
             }}
@@ -78,11 +86,24 @@ export default function NavCharacters({
               if (e.key === "Enter" || e.key === " ") onChapterSelect?.(chapter.id)
             }}
           >
-            <CharacterSprite
-              config={sprite}
-              startFrame={i * 3}   // stagger so characters aren't synced
-              animated={isActive}  // only the selected character animates
-            />
+            {/* Fixed-size slot: every sprite is centered in the same box.
+                overflow:hidden clips the rare 1-2px overshoot (Tidus sword tip). */}
+            <div
+              style={{
+                width:          SLOT_W,
+                height:         SLOT_H,
+                display:        "flex",
+                alignItems:     "center",
+                justifyContent: "center",
+                overflow:       "hidden",
+              }}
+            >
+              <CharacterSprite
+                config={sprite}
+                startFrame={i * 3}   // stagger so characters aren't synced
+                animated={isActive}  // only the selected character animates
+              />
+            </div>
           </div>
         )
       })}
