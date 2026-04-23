@@ -68,7 +68,8 @@ export const characterSprites: Record<string, SpriteConfig> = {
     cols: 3, rows: 2,
     frameCount: 4,   // verified: 3(row0)+1(row1)
     fps: 8,
-    displayH: 60,    // native 89px → 0.67× → 59px wide
+    displayH: 60,
+    displayW: 70,    // forced 70px wide → 72px tall (scale 0.80×, native 87×89)
   },
   lulu: {
     characterId: "lulu",
