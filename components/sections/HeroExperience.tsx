@@ -5,7 +5,7 @@ import dynamic from "next/dynamic"
 import { chapters } from "@/lib/three/chapters"
 import { weapons } from "@/lib/three/weaponData"
 import ChapterOverlay from "@/components/ui/ChapterOverlay"
-import NavDots from "@/components/ui/NavDots"
+import NavCharacters from "@/components/ui/NavCharacters"
 import SocialHoverLabel from "@/components/ui/SocialHoverLabel"
 import IntroVeil from "@/components/ui/IntroVeil"
 import { INTRO_CAM_DURATION } from "@/components/three/CameraRig"
@@ -216,9 +216,9 @@ export default function HeroExperience() {
       {/* Social hover label — only on social chapter */}
       <SocialHoverLabel hoveredId={isSocialChapter ? hoveredSocialId : null} />
 
-      {/* Navigation dots — fades in after intro */}
+      {/* Character sprite navigation — fades in after intro */}
       <div style={uiStyle}>
-        <NavDots
+        <NavCharacters
           activeChapterId={activeChapter.id}
           accentColor={accentColor}
           onChapterSelect={goToChapterById}
