@@ -8,24 +8,24 @@ import type { Weapon } from "@/lib/three/weaponData"
 // ─── Organic weapon glow — living energy, not a static filter ─────────────────
 //
 // Architecture: three concentric layers driven by uConcentration (controls radius)
-//   core  — tight bright center      (55% weight)
-//   mid   — medium halo              (32% weight)
-//   bloom — wide ambient             (13% weight)
+//   core  — tight bright center      (38% weight)
+//   mid   — medium halo              (35% weight)
+//   bloom — wide ambient             (27% weight)  ← shifted toward diffuse
 //
 // Animation: drift (asymmetric), wobble (organic), breath (pulse), flicker (magic)
 // Color: core shifts toward white — same luminous look as FFX sprite drop-shadows
 //
-// Wakka (blitzball) gets a lower concentration = wider visible glow.
-// All other weapons share a standard concentration, plane scales with weapon.scale.
+// Concentration 10 (was 14) + plane ×1.4 (was ×1.0) → wider, more integrated halo.
+// Wakka (blitzball) keeps its own wider settings.
 
 function getConcentration(weapon: Weapon): number {
   if (weapon.id === "wakka") return 3.5   // wider glow for the round blitzball
-  return 14.0
+  return 10.0                             // was 14 — wider, more diffuse
 }
 
 function getGlowSize(weapon: Weapon): number {
   if (weapon.id === "wakka") return weapon.scale * 1.6   // larger plane for wider glow
-  return weapon.scale * 1.0
+  return weapon.scale * 1.4                               // was 1.0 — more spread
 }
 
 const glowVert = `
@@ -55,41 +55,40 @@ void main() {
   vec2 d    = (vUv - 0.5) + drift;
   float rOrig = length(d);
 
-  // ── Edge fade — guarantees plane boundary is never visible ─────────────────
-  float edge = smoothstep(0.50, 0.28, rOrig);
+  // ── Edge fade — wider zone for smoother blend into background ───────────────
+  // 0.50→0.18 (was 0.50→0.28) gives a longer gradient, no hard contour.
+  float edge = smoothstep(0.50, 0.18, rOrig);
 
   // ── Organic wobble — living non-circular shape ─────────────────────────────
-  // Two inharmonic lobes rotating at different speeds → flame-like instability.
-  // Amplitude ±5.5% keeps it circular enough to not look like a trail.
   float angle  = atan(d.y, d.x);
   float wobble = 1.0
     + sin(angle * 3.0 + uTime * 0.95)  * 0.055
     + sin(angle * 5.0 - uTime * 0.63)  * 0.025;
   float r = rOrig * wobble;
 
-  // ── Three concentric layers ────────────────────────────────────────────────
+  // ── Three concentric layers — shifted toward diffuse/ambient ──────────────
+  // bloom weight 13%→27%: more ambient spread, less concentrated core look.
   float core  = exp(-r * r * uConcentration);
   float mid   = exp(-r * r * uConcentration * 0.36);
   float bloom = exp(-r * r * uConcentration * 0.12);
-  float glow  = core * 0.55 + mid * 0.32 + bloom * 0.13;
+  float glow  = core * 0.38 + mid * 0.35 + bloom * 0.27;
 
-  // ── Breath — slow 4-second pulse ──────────────────────────────────────────
-  // 2π / 4s = 1.5708 rad/s
-  float breath = sin(uTime * 1.5708) * 0.13 + 0.87;
+  // ── Breath — 4s pulse, amplitude ±22% (was ±13%) ─────────────────────────
+  // More perceptible rhythm without being aggressive: range 78–100% of alpha.
+  float breath = sin(uTime * 1.5708) * 0.22 + 0.78;
 
-  // ── Organic flicker — 3 inharmonic micro-waves ────────────────────────────
-  // Not a strobe — a subtle vibration, like a magic flame or spiritual energy.
+  // ── Organic flicker — toned down, less jittery ───────────────────────────
   float flicker =
-    sin(uTime * 2.31)        * 0.025 +
-    sin(uTime * 3.73 + 1.17) * 0.018 +
-    sin(uTime * 5.09 + 2.83) * 0.012 + 1.0;
+    sin(uTime * 2.31)        * 0.018 +
+    sin(uTime * 3.73 + 1.17) * 0.012 +
+    sin(uTime * 5.09 + 2.83) * 0.008 + 1.0;
 
   // ── Color — core drifts toward white (FFX sprite luminous look) ───────────
-  // Same effect as CSS drop-shadow on white-ish characters: bright center, tinted edges.
   vec3 brightened = mix(uTint, vec3(1.0), 0.28);
   vec3 color      = mix(uTint, brightened, core * 0.5);
 
-  float alpha = glow * edge * breath * flicker * uActive * 0.30;
+  // alpha 0.30→0.20 — more subtle, premium over demonstrative
+  float alpha = glow * edge * breath * flicker * uActive * 0.20;
   gl_FragColor = vec4(color, alpha);
 }
 `
