@@ -5,19 +5,23 @@ import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 import type { Weapon } from "@/lib/three/weaponData"
 
-// ─── Weapon glow — same principle as NavCharacters drop-shadow ────────────────
-// CSS drop-shadow on characters = circular, localized, small, soft.
-// We replicate the same idea in 3D: a small radial gaussian blob of colored light
-// placed BEHIND the weapon center. No texture, no silhouette, no elongated shape.
+// ─── Organic weapon glow — living energy, not a static filter ─────────────────
 //
-// Key constraint: the glow must NEVER follow the weapon's length or shape.
-// It is always circular, always centered, always contained.
+// Architecture: three concentric layers driven by uConcentration (controls radius)
+//   core  — tight bright center      (55% weight)
+//   mid   — medium halo              (32% weight)
+//   bloom — wide ambient             (13% weight)
+//
+// Animation: drift (asymmetric), wobble (organic), breath (pulse), flicker (magic)
+// Color: core shifts toward white — same luminous look as FFX sprite drop-shadows
+//
+// Wakka (blitzball) gets a lower concentration = wider visible glow.
+// All other weapons share a standard concentration, plane scales with weapon.scale.
 
-// Fixed world-space diameter of the glow plane — intentionally small so it
-// covers the weapon's CENTER ONLY, not its full length.
-// Weapons range from scale 2.8 to 4.2 (height 4.5 to 6.7 units).
-// A 2.8-unit diameter glow covers the central ~45–60% at most.
-const GLOW_DIAMETER = 2.8
+function getConcentration(weapon: Weapon): number {
+  if (weapon.id === "wakka") return 6.0   // wider glow for the round blitzball
+  return 14.0
+}
 
 const glowVert = `
 varying vec2 vUv;
@@ -30,25 +34,58 @@ void main() {
 const glowFrag = `
 uniform float uTime;
 uniform float uActive;
+uniform float uConcentration;
 uniform vec3  uTint;
 varying vec2 vUv;
 
 void main() {
   if (uActive < 0.005) { gl_FragColor = vec4(0.0); return; }
 
-  // Circular distance from center — isotropic, never follows weapon shape
-  vec2 d = vUv - 0.5;
-  float r = length(d);
+  // ── Drift — glow center shifts over time ──────────────────────────────────
+  // Creates the directional asymmetry: energy appears to emanate rather than sit still.
+  vec2 drift = vec2(
+    sin(uTime * 0.21)       * 0.036,
+    cos(uTime * 0.17 + 0.8) * 0.030
+  );
+  vec2 d    = (vUv - 0.5) + drift;
+  float rOrig = length(d);
 
-  // Single smooth gaussian falloff — bright center, fully transparent at edges
-  // k=18 → nearly invisible at r=0.45 (90% of radius), clean at r=0.5 (edge)
-  float glow = exp(-r * r * 18.0);
+  // ── Edge fade — guarantees plane boundary is never visible ─────────────────
+  float edge = smoothstep(0.50, 0.28, rOrig);
 
-  // Gentle breath — same cadence as NavCharacters active state
-  float breath = sin(uTime * 0.30) * 0.07 + 0.93;
+  // ── Organic wobble — living non-circular shape ─────────────────────────────
+  // Two inharmonic lobes rotating at different speeds → flame-like instability.
+  // Amplitude ±5.5% keeps it circular enough to not look like a trail.
+  float angle  = atan(d.y, d.x);
+  float wobble = 1.0
+    + sin(angle * 3.0 + uTime * 0.95)  * 0.055
+    + sin(angle * 5.0 - uTime * 0.63)  * 0.025;
+  float r = rOrig * wobble;
 
-  float alpha = glow * breath * uActive * 0.28;
-  gl_FragColor = vec4(uTint, alpha);
+  // ── Three concentric layers ────────────────────────────────────────────────
+  float core  = exp(-r * r * uConcentration);
+  float mid   = exp(-r * r * uConcentration * 0.36);
+  float bloom = exp(-r * r * uConcentration * 0.12);
+  float glow  = core * 0.55 + mid * 0.32 + bloom * 0.13;
+
+  // ── Breath — slow 4-second pulse ──────────────────────────────────────────
+  // 2π / 4s = 1.5708 rad/s
+  float breath = sin(uTime * 1.5708) * 0.13 + 0.87;
+
+  // ── Organic flicker — 3 inharmonic micro-waves ────────────────────────────
+  // Not a strobe — a subtle vibration, like a magic flame or spiritual energy.
+  float flicker =
+    sin(uTime * 2.31)        * 0.025 +
+    sin(uTime * 3.73 + 1.17) * 0.018 +
+    sin(uTime * 5.09 + 2.83) * 0.012 + 1.0;
+
+  // ── Color — core drifts toward white (FFX sprite luminous look) ───────────
+  // Same effect as CSS drop-shadow on white-ish characters: bright center, tinted edges.
+  vec3 brightened = mix(uTint, vec3(1.0), 0.28);
+  vec3 color      = mix(uTint, brightened, core * 0.5);
+
+  float alpha = glow * edge * breath * flicker * uActive * 0.30;
+  gl_FragColor = vec4(color, alpha);
 }
 `
 
@@ -62,11 +99,12 @@ export default function WeaponAura({ weapon, isActive, isSocialChapter }: Weapon
   const meshRef = useRef<THREE.Mesh>(null)
 
   const uniforms = useMemo(() => ({
-    uTime:   { value: 0 },
-    uActive: { value: 0 },
-    uTint:   { value: new THREE.Vector3(...weapon.tint) },
+    uTime:          { value: 0 },
+    uActive:        { value: 0 },
+    uConcentration: { value: getConcentration(weapon) },
+    uTint:          { value: new THREE.Vector3(...weapon.tint) },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [weapon.tint])
+  }), [weapon.id, weapon.tint])
 
   const phase = useMemo(
     () => weapon.position[0] * 0.7 + weapon.position[2] * 0.4,
@@ -78,7 +116,7 @@ export default function WeaponAura({ weapon, isActive, isSocialChapter }: Weapon
     const t      = state.clock.elapsedTime
     const target = (isActive && !isSocialChapter) ? 1.0 : 0.0
 
-    // Mirror weapon float so glow tracks with the weapon exactly
+    // Mirror weapon float exactly
     const floatY  = Math.sin(t * weapon.floatSpeed + phase) * weapon.floatAmplitude
     const floatY2 = Math.cos(t * weapon.floatSpeed * 0.58 + phase + 1.3) * weapon.floatAmplitude * 0.38
 
@@ -96,12 +134,15 @@ export default function WeaponAura({ weapon, isActive, isSocialChapter }: Weapon
       mat.uniforms.uActive.value = THREE.MathUtils.lerp(cur, target, 0.035)
   })
 
+  // Plane scales with weapon — glow size proportional to weapon size
+  const size = weapon.scale * 1.0
+
   return (
     <mesh
       ref={meshRef}
       position={[weapon.position[0], weapon.position[1], weapon.position[2] - 0.5]}
     >
-      <planeGeometry args={[GLOW_DIAMETER, GLOW_DIAMETER]} />
+      <planeGeometry args={[size, size]} />
       <shaderMaterial
         vertexShader={glowVert}
         fragmentShader={glowFrag}
