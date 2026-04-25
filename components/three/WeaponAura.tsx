@@ -19,8 +19,13 @@ import type { Weapon } from "@/lib/three/weaponData"
 // All other weapons share a standard concentration, plane scales with weapon.scale.
 
 function getConcentration(weapon: Weapon): number {
-  if (weapon.id === "wakka") return 6.0   // wider glow for the round blitzball
+  if (weapon.id === "wakka") return 3.5   // wider glow for the round blitzball
   return 14.0
+}
+
+function getGlowSize(weapon: Weapon): number {
+  if (weapon.id === "wakka") return weapon.scale * 1.6   // larger plane for wider glow
+  return weapon.scale * 1.0
 }
 
 const glowVert = `
@@ -134,8 +139,7 @@ export default function WeaponAura({ weapon, isActive, isSocialChapter }: Weapon
       mat.uniforms.uActive.value = THREE.MathUtils.lerp(cur, target, 0.035)
   })
 
-  // Plane scales with weapon — glow size proportional to weapon size
-  const size = weapon.scale * 1.0
+  const size = getGlowSize(weapon)
 
   return (
     <mesh
