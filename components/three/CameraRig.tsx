@@ -97,15 +97,15 @@ export default function CameraRig({ activeChapter }: CameraRigProps) {
     tempPos.current.x += smoothMouse.current.x * 0.22
     tempPos.current.y += smoothMouse.current.y * 0.11
 
-    // ── Position — tighter lambda during travel for clean tracking ────────────
-    const posLambda = introRaw < 1 ? 3.2 : 2.2
+    // ── Position — noble slow glide between chapters (1.6 post-intro) ─────────
+    const posLambda = introRaw < 1 ? 3.2 : 1.6
     const posAlpha  = 1 - Math.exp(-posLambda * delta)
     camera.position.lerp(tempPos.current, posAlpha)
 
     // ── Breathing — only after travel completes ───────────────────────────────
     const settled      = Math.max(0, (introRaw - 0.88) / 0.12)
     const distToTarget = camera.position.distanceTo(tempPos.current)
-    const breathWeight = Math.max(0, 1 - distToTarget * 5) * 0.006 * settled
+    const breathWeight = Math.max(0, 1 - distToTarget * 5) * 0.008 * settled
     camera.position.y += Math.sin(t * 0.62) * breathWeight
     camera.position.x += Math.cos(t * 0.45 + 1.1) * breathWeight * 0.55
 

@@ -26,8 +26,8 @@ import type { Weapon } from "@/lib/three/weaponData"
 // so the blur can spread naturally outside the weapon silhouette, exactly as
 // CSS drop-shadow bleeds outside the element's bounding box.
 
-// Must match the GLSL constant below
-const AURA_MARGIN = 1.6
+// Must match the GLSL constant below (1.4 = 40% larger than sprite on each axis)
+const AURA_MARGIN = 1.4
 
 const auraVert = `
 varying vec2 vUv;
@@ -46,7 +46,7 @@ varying vec2 vUv;
 
 // Aura plane is this many times larger than the sprite plane (each axis).
 // Must match the JS constant AURA_MARGIN.
-const float MARGIN = 1.6;
+const float MARGIN = 1.4;
 
 // Sample sprite alpha — returns 0.0 outside [0, 1] (no sprite there)
 float spriteAlpha(vec2 uv) {
@@ -96,7 +96,7 @@ void main() {
   float breath = sin(uTime * 0.30) * 0.10 + 0.90;
   float micro  = sin(uTime * 0.61 + 1.7) * 0.04 + 0.96;
 
-  float alpha = glow * breath * micro * uActive * 0.60;
+  float alpha = glow * breath * micro * uActive * 0.40;
   gl_FragColor = vec4(uTint, alpha);
 }
 `
