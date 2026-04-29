@@ -89,7 +89,7 @@ void main() {
   // The weapon's spiritual presence concentrates at the centre of the water.
   vec2 center = uv - vec2(0.5, 0.42);
   float cGlow = smoothstep(0.78, 0.0, length(center) * 1.08);
-  bg += mix(vec3(0.0, 0.10, 0.22), uTint * 0.55, 0.38) * cGlow * 0.095;
+  bg += mix(vec3(0.0, 0.10, 0.22), uTint * 0.55, 0.38) * cGlow * 0.120;
 
   // ── Moonflow caustics ──────────────────────────────────────────────────
   float cx = sin(uv.x * 18.0 + uTime * 0.12) * cos(uv.x * 11.0 - uTime * 0.08);
@@ -110,6 +110,7 @@ void main() {
   vec2 m5 = vec2(0.84 + sin(uTime * 0.091) * 0.038, 0.55 + cos(uTime * 0.107) * 0.047);
   vec2 m6 = vec2(0.38 + cos(uTime * 0.094) * 0.055, 0.28 + sin(uTime * 0.076) * 0.048);
   vec2 m7 = vec2(0.63 + sin(uTime * 0.117) * 0.042, 0.68 + cos(uTime * 0.099) * 0.036);
+  vec2 m8 = vec2(0.46 + cos(uTime * 0.081) * 0.059, 0.52 + sin(uTime * 0.113 + 1.9) * 0.038);
 
   float p1 = exp(-length((uv - m1) * vec2(72.0, 72.0)));
   float p2 = exp(-length((uv - m2) * vec2(88.0, 88.0)));
@@ -118,16 +119,17 @@ void main() {
   float p5 = exp(-length((uv - m5) * vec2(95.0, 95.0)));
   float p6 = exp(-length((uv - m6) * vec2(82.0, 82.0)));
   float p7 = exp(-length((uv - m7) * vec2(70.0, 70.0)));
+  float p8 = exp(-length((uv - m8) * vec2(85.0, 85.0)));
 
   float motePulse = sin(uTime * 0.38) * 0.5 + 0.5;
 
   vec3 pyreflyGold = vec3(1.00, 0.72, 0.18);
-  float moteWarm = p1 + p3 + p5 * motePulse + p6 + p7 * (1.0 - motePulse * 0.4);
-  bg += pyreflyGold * moteWarm * 0.058;
+  float moteWarm = p1 + p3 + p5 * motePulse + p6 + p7 * (1.0 - motePulse * 0.4) + p8 * motePulse;
+  bg += pyreflyGold * moteWarm * 0.072;
 
   vec3 pyreflyCool = vec3(0.70, 0.88, 1.00);
   float moteCool = p2 * motePulse + p4 * (1.0 - motePulse * 0.5);
-  bg += pyreflyCool * moteCool * 0.032;
+  bg += pyreflyCool * moteCool * 0.038;
 
   // ── Vignette ───────────────────────────────────────────────────────────
   vec2 vigUv = uv * (1.0 - uv.yx);

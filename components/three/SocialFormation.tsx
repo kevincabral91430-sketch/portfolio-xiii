@@ -1,168 +1,301 @@
 "use client"
+// ─── SocialFormation.tsx ─────────────────────────────────────────────────────
+// Système de particules "pyreflies" pour les libellés Instagram / LinkedIn /
+// XIII Production. Le texte n'est jamais rendu : il sert de moule invisible
+// (rasterisation canvas → reject-sampling) qui devient les positions cibles.
+//
+// Architecture
+//   • textToParticles.sampleTextToParticles  →  cibles XY (positions cibles)
+//   • Trois couches de profondeur encodées dans aLayer (0=back, 1=mid, 2=front)
+//   • Vertex shader : simplex 3D (dérive organique) + impulsion souris
+//                     directionnelle (jamais radiale) + scatter d'entrée
+//   • Fragment shader : softness/glow/teinte par couche
+//   • useFrame : suivi souris, vitesse lissée, décroissance → retour fluide
+//
+// Aucun état n'est stocké côté GPU : chaque frame se calcule analytiquement
+// depuis (position cible, seed, layer, time, mousePos, mouseDir, mouseSpeed).
 
-import { useRef, useMemo } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 import type { SocialLink } from "@/lib/three/socialData"
+import { sampleTextToParticles } from "@/lib/three/textToParticles"
 
-// ─── Vertex shader — pyrefly / spiritual souls ─────────────────────────────
-const vert = `
+// ─── Vertex shader ────────────────────────────────────────────────────────────
+const vert = /* glsl */ `
 uniform float uTime;
-uniform float uActive;
-uniform float uHover;
-uniform vec2  uMousePosLast;   // last active mouse position (frozen on leave)
-uniform float uMouseRad;
-uniform float uMouseInfluence; // 0→1 energy; ramps fast, decays slow (gradual return)
-attribute float aOffset;
-attribute vec3  aTarget;
+uniform float uActive;        // 0..1 — fade in / scatter d'entrée
+uniform float uHover;         // 0..1
+uniform vec2  uMousePos;      // position souris en unités-monde (z=0)
+uniform vec2  uMouseDir;      // unitaire — direction du dernier mouvement
+uniform float uImpact;        // 0..1 — intensité du sillage (AUCUNE dépendance vitesse)
+
+attribute float aSeed;        // 0..1 unique par particule
+attribute float aLayer;       // 0 = back, 1 = mid, 2 = front
+
 varying float vAlpha;
-varying float vHover;
-varying float vGlowSize;
+varying float vLayer;
+
+// ── Simplex 3D (Stefan Gustavson, compact) ──────────────────────────────────
+vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+
+float snoise(vec3 v){
+  const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i  = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g  = step(x0.yzx, x0.xyz);
+  vec3 l  = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(
+              i.z + vec4(0.0, i1.z, i2.z, 1.0))
+            + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+            + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0) * 2.0 + 1.0;
+  vec4 s1 = floor(b1) * 2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m * m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+}
 
 void main() {
-  vec3 pos = aTarget;
+  // ── La position cible (le moule lettre) — jamais mutée côté JS
+  vec3 target = position;
+  vec3 pos    = target;
 
-  // ── Per-particle identity ──────────────────────────────────────────────────
-  // aOffset is hash-distributed → every letter has a full mix of core+ambient.
-  //   low  → core sparks: small, bright, anchored close to letterform
-  //   high → ambient souls: larger, dimmer, free to wander
-  float role = aOffset;
-  float ph   = role * 43.758 + 1.234;
+  // Phase per-cluster : particules d'une même région respirent en cohérence
+  float cluster = target.x * 0.6180 + target.y * 1.6180;
 
-  // ── Z-depth — deep 3D soul cloud (±1.4 world units) ──────────────────────
-  float zLayer = (role * 2.0 - 1.0) * 1.4;
-  pos.z += zLayer;
+  // ── 1. Dérive simplex 3D — base lente, ample mais contenue ──────────────
+  float t  = uTime * 0.65;                                  // tempo ~1.55× plus rapide
+  vec3 nv  = vec3(target.x * 0.55, target.y * 0.55, t + aSeed * 9.42);
 
-  // ── Organic idle — two-frequency Lissajous, amplitude grows with role ──────
-  float amp   = 0.04 + role * role * 0.26;   // 0.04 → 0.30 world units
-  float speed = 0.15 + role * 0.30;          // 0.15 → 0.45 rad/s
+  vec3 drift;
+  drift.x = snoise(nv);
+  drift.y = snoise(nv + vec3( 31.7,  17.3,  4.1)) * 1.18;  // biais Y → âmes qui s'élèvent
+  drift.z = snoise(nv + vec3(113.7, 211.1,  7.7));
 
-  pos.x += sin(uTime * speed          + ph)          * amp
-          + cos(uTime * speed * 0.61  + ph * 1.732) * amp * 0.52;
-  pos.y += cos(uTime * speed * 0.83   + ph)          * amp
-          + sin(uTime * speed * 0.41  + ph * 2.173) * amp * 0.52;
-  pos.z += sin(uTime * speed * 0.53   + ph * 0.893) * amp * 0.70;
+  // Back drifte plus large (haze), front quasi figé pour la lisibilité du contour
+  float layerDriftMul = 1.0 + (2.0 - aLayer) * 0.22;       // back ×1.44, mid ×1.22, front ×1.00
+  drift *= 0.038 * layerDriftMul;                          // légère hausse vs v3
 
-  // ── Ambient scatter — high-role souls float outward around the word ────────
-  float ambient = max(0.0, (role - 0.65) / 0.35);
-  if (ambient > 0.001) {
-    float r1  = fract(sin(role * 127.1 + 311.7) * 43758.5);
-    float r2  = fract(sin(role * 269.5 + 183.3) * 53748.1);
-    float ang = r1 * 6.2832;
-    float rad = (0.4 + r2 * 1.4) * ambient;
-    pos.xy   += vec2(cos(ang), sin(ang)) * rad;
-    pos.z    += (r1 * 2.0 - 1.0) * 0.9 * ambient;
-  }
+  // ── 2. Micro-jitter haute fréquence — variations visibles, riches ──────
+  // Couche additive rapide → "fourmillement" subtil sans casser le contour.
+  // Échelle spatiale grande (×1.4) + tempo rapide (×1.8) → particules qui
+  // vibrent individuellement, pas de cohérence cluster sur cette couche.
+  vec3 nv2 = vec3(target.xy * 1.4, uTime * 1.8 + aSeed * 23.0);
+  vec3 microJitter = vec3(
+    snoise(nv2),
+    snoise(nv2 + vec3( 7.3, 17.1,  3.5)) * 0.9,
+    snoise(nv2 + vec3(91.7, 41.3, 13.0))
+  );
+  drift += microJitter * 0.012 * layerDriftMul;
 
-  // ── Cursor explosion — chaotic, multi-directional, with gradual return ─────
-  // Per-particle deterministic chaos seeds (unique per particle, time-modulated)
-  float s1 = fract(sin(role * 843.1 + 427.7) * 39758.5);
-  float s2 = fract(sin(role * 569.3 + 211.4) * 71234.9);
-  float s3 = fract(sin(role * 193.7 + 653.2) * 28475.3);
+  // Respiration cluster — fréquence boostée
+  drift.y += sin(uTime * 0.85 + cluster)            * 0.009;
+  drift.x += cos(uTime * 0.72 + cluster * 1.21)     * 0.007;
 
-  // Proximity to LAST active mouse pos — persists after mouse leaves → gradual return
-  vec2  diff    = pos.xy - uMousePosLast;
-  float dist    = length(diff);
-  float proxFac = clamp(1.0 - dist / uMouseRad, 0.0, 1.0);
-  proxFac       = proxFac * proxFac * proxFac;   // cubic: strong at center, gentle at edge
+  pos += drift;
 
-  if (uMouseInfluence * proxFac > 0.001) {
-    // Radial component (away from mouse)
-    vec2 radial = dist > 0.001 ? normalize(diff) : normalize(vec2(s1 - 0.5, s2 - 0.5));
-    // Tangential (perpendicular swirl), sign from particle seed
-    vec2 tang   = vec2(-radial.y, radial.x) * (s1 > 0.5 ? 1.0 : -1.0);
-    // Per-particle random direction, slowly rotating over time (living feel)
-    float ang2  = s1 * 6.2832 + uTime * 0.20 * (s2 - 0.5);
-    vec2 chaos  = vec2(cos(ang2), sin(ang2));
+  // ── 3. Sillage souris — DIRECTION ONLY, trajectoire organique ────────────
+  // Plus aucune dépendance à la vitesse. uImpact ∈ [0,1] est une intensité
+  // ramp-up/ramp-down stable. La direction de déplacement est composée :
+  //   • base = uMouseDir (axe principal)
+  //   • forwardWave = bruit lent → variation d'amplitude le long de l'axe
+  //   • lateralWave = sin haute fréquence + simplex → zigzag perpendiculaire
+  // → pas de ligne droite ni en sortie ni en retour : trajectoire vivante.
+  vec2  toMouse = target.xy - uMousePos;
+  float d2      = dot(toMouse, toMouse);
+  float falloff = exp(-d2 * 0.55);                          // σ ≈ 1.35 wu
 
-    // Mix: 20% radial + 40% tangential swirl + 40% chaos → breaks perfect circle
-    vec2 explDir = normalize(radial * 0.20 + tang * 0.40 + chaos * 0.40);
-    float explZ  = (s3 * 2.0 - 1.0);
+  vec2 baseDir = uMouseDir;
+  vec2 perpDir = vec2(-baseDir.y, baseDir.x);
 
-    // Force: proximity × influence decay × role-weighted (ambient travels further)
-    float force = uMouseInfluence * proxFac * (1.8 + role * 4.2);
+  // Onde latérale multi-fréquences : sin rapide + simplex lent → trajectoire
+  // jamais sinusoïdale pure, jamais répétitive. C'est le zigzag organique.
+  float lateralWave =
+        sin(uTime * 2.4 + aSeed * 31.0)                                       * 0.55
+      + snoise(vec3(target.xy * 0.5, uTime * 1.7 + aSeed * 12.0))             * 0.85;
 
-    pos.xy += explDir * force;
-    pos.z  += explZ * force * 0.85;
-  }
+  // Variation lente de l'amplitude longitudinale → certaines particules
+  // avancent davantage, d'autres moins → variation de direction visible.
+  float forwardWave = 0.85
+      + snoise(vec3(target.xy * 0.4, uTime * 0.9 + aSeed * 9.7))              * 0.25;
 
-  // ── Entry: scatter → converge ─────────────────────────────────────────────
-  float sc  = 1.0 - uActive;
-  sc       *= sc;
-  float mag = sc * (4.0 + role * 4.5);
-  float dx  = sin(role * 127.1 + 311.7);
-  float dy  = cos(role * 269.5 + 183.3);
-  float dz  = sin(role * 419.2 +  75.8) * 0.45;
-  float dl  = sqrt(dx*dx + dy*dy + dz*dz) + 0.001;
-  pos      += vec3(dx, dy, dz) / dl * mag;
+  vec2 dispDir = baseDir * forwardWave + perpDir * lateralWave;
 
-  // ── Hover: subtle cloud expansion ─────────────────────────────────────────
-  pos *= (1.0 + uHover * 0.03);
+  // Parallaxe par couche
+  float layerImp = 0.78 + aLayer * 0.36;                    // 0.78 / 1.14 / 1.50
+  // Intensité fixe — ne dépend QUE de uImpact (0-1, indépendant de la vitesse)
+  // Pendant la décroissance de uImpact, lateralWave continue d'osciller →
+  // l'amplitude diminue mais la particule ondule encore → retour zigzag.
+  float baseForce = 0.55;
+  float amp       = falloff * uImpact * baseForce * layerImp;
+  pos.xy += dispDir * amp;
+  pos.z  += (aSeed - 0.5) * amp * 0.85;
 
-  vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
+  // ── 4. Scatter d'entrée — convergence depuis un nuage dispersé ──────────
+  float sc = 1.0 - uActive;
+  sc = sc * sc;                                             // ease-out quadratique
+  float scatterMag = sc * 4.6;
+  vec3 scatterDir = normalize(vec3(
+    sin(aSeed * 127.1 + 311.7),
+    cos(aSeed * 269.5 + 183.3),
+    sin(aSeed * 419.2 +  75.8)
+  ) + vec3(0.0001));
+  pos += scatterDir * scatterMag;
+
+  // ── 5. Hover — expansion collective douce ───────────────────────────────
+  pos.xy *= 1.0 + uHover * 0.025;
+
+  // ── Projection ──────────────────────────────────────────────────────────
+  vec4 mvPos  = modelViewMatrix * vec4(pos, 1.0);
   gl_Position = projectionMatrix * mvPos;
 
-  // ── Point size — perspective correct ──────────────────────────────────────
-  float pxScale  = 200.0 / -mvPos.z;
-  float baseSize = mix(0.52, 1.70, role);
-  float hBoost   = 1.0 + uHover * 0.35;
-  gl_PointSize   = clamp(baseSize * hBoost * pxScale * uActive, 0.0, 20.0);
+  // ── Taille du point — sculpturale, fine, lisible (skill §6) ─────────────
+  // Cible @ z=16 : back 1.5 / mid 2.7 / front 4.2 px → vrais points distincts
+  float baseSize = 0.11 + aLayer * 0.11;                    // 0.11 / 0.22 / 0.33
+  float pxScale  = 220.0 / -mvPos.z;
+  float hBoost   = 1.0 + uHover * 0.18;
+  gl_PointSize   = clamp(baseSize * pxScale * hBoost * uActive, 0.0, 6.0);
 
-  // ── Z depth fade — far particles dimmer (reinforces 3D volume) ────────────
-  float depthFade = 0.55 + 0.45 * clamp((zLayer + 1.4) / 2.8, 0.0, 1.0);
-
-  // ── Twinkle — every soul pulses at its own frequency ──────────────────────
-  float tFreq   = 1.4 + role * 2.6;
-  float twinkle = 0.45 + 0.55 * (0.5 + 0.5 * sin(uTime * tFreq + ph * 4.2));
-
-  // ── Alpha — kept low to prevent AdditiveBlending saturation at D=10 ───────
-  float baseAlpha = mix(0.35, 0.09, role);
-  vAlpha     = uActive * baseAlpha * clamp(twinkle, 0.0, 1.0) * depthFade;
-  vHover     = uHover;
-  vGlowSize  = role;
+  // ── Alpha — pas de twinkle, juste une variation très subtile ────────────
+  // Skill §7 : amplitude max 0.06 — au-delà ça scintille / strobe.
+  float tFreq    = 0.62 + aSeed * 1.20;
+  float breathe  = 0.94 + 0.06 * sin(uTime * tFreq + aSeed * 17.3);
+  // Couches en alpha croissante (skill §6) : back haze, front net
+  float layerAlpha = 0.18 + aLayer * 0.22;                  // back 0.18 / mid 0.40 / front 0.62
+  vAlpha = uActive * layerAlpha * breathe;
+  vLayer = aLayer;
 }
 `
 
-// ─── Fragment shader — pure soft gaussian, zero neon ──────────────────────
-const frag = `
+// ─── Fragment shader ──────────────────────────────────────────────────────────
+// Recette igloo / Awwwards (voir docs/skills/particle-typography/SKILL.md §4) :
+//   • disque PLAT à bord anti-aliasé (smoothstep), pas de gaussienne
+//   • pigment pur, jamais multiplié au-dessus de 1.0 (§9, loi 1)
+//   • aucune teinte chromatique chaud/froid (cause du "néon")
+//   • aucun spark de luminance — l'impact souris est porté par le déplacement
+const frag = /* glsl */ `
 uniform vec3  uColor;
 varying float vAlpha;
-varying float vHover;
-varying float vGlowSize;
+varying float vLayer;
 
 void main() {
-  vec2  c  = gl_PointCoord - 0.5;
-  float d2 = dot(c, c);
-  if (d2 > 0.25) discard;
+  vec2 c = gl_PointCoord - 0.5;
+  float r = length(c);
+  if (r > 0.5) discard;
 
-  // ── Soft gaussian — width varies with role ────────────────────────────────
-  //   core  (role→0): k=10 → tight warm spark
-  //   ambient (role→1): k=5  → wide diffuse soul glow
-  float k    = 10.0 - vGlowSize * 5.0;
-  float glow = exp(-d2 * k);
+  // ── Disque plat avec bord anti-aliasé ──────────────────────────────
+  // L'intérieur du disque a un alpha uniforme → deux particules qui se
+  // recouvrent ne deviennent pas plus brillantes, elles se superposent
+  // simplement. C'est la définition d'une "particule" et non d'un "spark".
+  // Largeur d'AA modulée par couche : back légèrement plus douce, front nette.
+  float aaWidth = mix(0.06, 0.020, vLayer * 0.5);          // back 0.060 / mid 0.040 / front 0.020
+  float disc    = smoothstep(0.50, 0.50 - aaWidth, r);
 
-  // ── Color — max 1.35× tint, never white ──────────────────────────────────
-  vec3 col = uColor * (0.85 + glow * 0.50);
-  col *= (1.0 + vHover * 0.20);
+  // ── Pigment pur, jamais > 100 % ────────────────────────────────────
+  // Couche back assourdie pour reculer dans la profondeur.
+  float layerLum = 0.78 + vLayer * 0.11;                   // 0.78 / 0.89 / 1.00
+  vec3  col      = uColor * layerLum;
 
-  float alpha = glow * vAlpha;
-  gl_FragColor = vec4(col, alpha);
+  gl_FragColor = vec4(col, disc * vAlpha);
 }
 `
 
-interface SocialFormationProps {
-  link: SocialLink
-  isActive: boolean
-  isHovered: boolean
-  onHoverEnter: () => void
-  onHoverLeave: () => void
-  onClick: () => void
+// ─── Buffers structurés ──────────────────────────────────────────────────────
+interface ParticleBuffers {
+  positions: Float32Array  // xyz × N — XY = cible lettre, Z = offset de couche
+  seeds:     Float32Array  // N — [0,1) unique
+  layers:    Float32Array  // N — 0 (back) / 1 (mid) / 2 (front)
+  count:     number
 }
 
-// Pre-allocated vectors for mouse projection (zero GC in useFrame)
-const _vProj = new THREE.Vector3()
-const _dProj = new THREE.Vector3()
-const _mProj = new THREE.Vector3()
+/**
+ * Construit les attributs depuis les positions cibles 2D.
+ * Distribution des couches : 25 % back / 50 % mid / 25 % front.
+ * Le Z est jitté à l'intérieur de chaque tranche → relief continu.
+ */
+function buildParticleBuffers(targets: [number, number, number][]): ParticleBuffers {
+  const n = targets.length
+  const positions = new Float32Array(n * 3)
+  const seeds     = new Float32Array(n)
+  const layers    = new Float32Array(n)
+
+  // LCG déterministe
+  let s = 0x6a09e667
+  const rand = (): number => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0
+    return s / 0x100000000
+  }
+
+  // Plages Z par couche (unités-monde) — voir SKILL §6
+  // Volume total ~1.2 wu : sculptural, parallaxe lisible, sans nuire à la lecture
+  const Z_BACK_LO  = -0.60, Z_BACK_HI  = -0.25
+  const Z_MID_LO   = -0.10, Z_MID_HI   = +0.20
+  const Z_FRONT_LO = +0.30, Z_FRONT_HI = +0.65
+
+  for (let i = 0; i < n; i++) {
+    const [x, y] = targets[i]
+    const seed = rand()
+    seeds[i] = seed
+
+    // Tirage de couche
+    const r = rand()
+    let layer: number, zLo: number, zHi: number
+    if (r < 0.25)      { layer = 0; zLo = Z_BACK_LO;  zHi = Z_BACK_HI  }
+    else if (r < 0.75) { layer = 1; zLo = Z_MID_LO;   zHi = Z_MID_HI   }
+    else               { layer = 2; zLo = Z_FRONT_LO; zHi = Z_FRONT_HI }
+
+    layers[i] = layer
+    positions[i * 3]     = x
+    positions[i * 3 + 1] = y
+    positions[i * 3 + 2] = zLo + rand() * (zHi - zLo)
+  }
+
+  return { positions, seeds, layers, count: n }
+}
+
+// ─── Réutilisables au niveau module ──────────────────────────────────────────
+const _vRay = new THREE.Vector3()
+const _dRay = new THREE.Vector3()
+const _hRay = new THREE.Vector3()
+
+interface SocialFormationProps {
+  link:         SocialLink
+  isActive:     boolean
+  isHovered:    boolean
+  onHoverEnter: () => void
+  onHoverLeave: () => void
+  onClick:      () => void
+}
 
 export default function SocialFormation({
   link,
@@ -173,87 +306,165 @@ export default function SocialFormation({
   onClick,
 }: SocialFormationProps) {
   const pointsRef = useRef<THREE.Points>(null)
+  const [buffers, setBuffers] = useState<ParticleBuffers | null>(null)
+  const wasActive = useRef(false)
 
-  const { positions, offsets } = useMemo(() => {
-    const n   = link.particles.length
-    const pos = new Float32Array(n * 3)
-    const off = new Float32Array(n)
-    link.particles.forEach(([x, y, z], i) => {
-      pos[i * 3]     = x
-      pos[i * 3 + 1] = y
-      pos[i * 3 + 2] = z
-      // Hash-based offset: every letter gets a full mix of core + ambient roles
-      off[i] = Math.abs(Math.sin(i * 127.1 + 311.7) * 43758.5453) % 1.0
-    })
-    return { positions: pos, offsets: off }
-  }, [link.particles])
+  // ── État du suivi souris ──────────────────────────────────────────────
+  // wakeIntensity remplace smoothSpd : c'est une intensité 0-1 qui ramp-up
+  // dès qu'un mouvement est détecté et décroît dès qu'il s'arrête.
+  // AUCUNE corrélation avec la vitesse : que tu fasses un flick rapide ou
+  // un drag lent, l'intensité du sillage est la même.
+  const prevWorld     = useRef(new THREE.Vector2(9999, 9999))
+  const frozenPos     = useRef(new THREE.Vector2(9999, 9999))
+  const smoothDir     = useRef(new THREE.Vector2(1, 0))
+  const wakeIntensity = useRef(0)
 
-  const uniforms = useMemo(() => ({
-    uTime:           { value: 0 },
-    uActive:         { value: 0 },
-    uHover:          { value: 0 },
-    uMousePosLast:   { value: new THREE.Vector2(9999, 9999) },
-    uMouseRad:       { value: 3.2 },
-    uMouseInfluence: { value: 0 },
-    uColor:          { value: new THREE.Vector3(...link.tint) },
-  }), [link.tint])
+  // ── Construction du moule : on attend que la fonte soit chargée ──────
+  useEffect(() => {
+    let cancelled = false
+    const build = async () => {
+      try {
+        // S'assure que Geist (chargée par Next) est dispo dans le canvas
+        await (document as { fonts?: { ready: Promise<unknown> } }).fonts?.ready
+      } catch {
+        /* ignore */
+      }
+      if (cancelled) return
 
+      const targets = sampleTextToParticles({
+        lines:       link.text.lines,
+        count:       link.text.count,
+        worldWidth:  link.text.worldWidth,
+        fontWeight:  800,
+      })
+      if (cancelled || targets.length === 0) return
+      setBuffers(buildParticleBuffers(targets))
+    }
+    void build()
+    return () => {
+      cancelled = true
+    }
+  }, [link.text])
+
+  // ── Uniforms — alloués une fois ───────────────────────────────────────
+  const uniforms = useMemo(
+    () => ({
+      uTime:     { value: 0 },
+      uActive:   { value: 0 },
+      uHover:    { value: 0 },
+      uColor:    { value: new THREE.Vector3(...link.tint) },
+      uMousePos: { value: new THREE.Vector2(9999, 9999) },
+      uMouseDir: { value: new THREE.Vector2(1, 0) },
+      uImpact:   { value: 0 },                            // 0-1 — ne dépend pas de la vitesse
+    }),
+    [link.tint]
+  )
+
+  // ── Boucle d'animation ────────────────────────────────────────────────
   useFrame((state) => {
     if (!pointsRef.current) return
     const mat = pointsRef.current.material as THREE.ShaderMaterial
+    const t = state.clock.elapsedTime
 
-    mat.uniforms.uTime.value = state.clock.elapsedTime
-
-    // Smooth active fade
+    mat.uniforms.uTime.value = t
     mat.uniforms.uActive.value = THREE.MathUtils.lerp(
-      mat.uniforms.uActive.value, isActive ? 1.0 : 0.0, 0.065
+      mat.uniforms.uActive.value, isActive ? 1 : 0, 0.065
+    )
+    mat.uniforms.uHover.value = THREE.MathUtils.lerp(
+      mat.uniforms.uHover.value, isHovered ? 1 : 0, 0.085
     )
 
-    // Hover lerp
-    mat.uniforms.uHover.value = THREE.MathUtils.lerp(
-      mat.uniforms.uHover.value, isHovered ? 1.0 : 0.0, 0.08
-    )
+    // Skip complet quand invisible (économie GPU + pas de pollution d'état)
+    if (!isActive && mat.uniforms.uActive.value < 0.008) {
+      wasActive.current = false
+      return
+    }
+
+    // Reset propre à l'activation
+    if (isActive && !wasActive.current) {
+      prevWorld.current.set(9999, 9999)
+      frozenPos.current.set(9999, 9999)
+      wakeIntensity.current = 0
+      mat.uniforms.uMousePos.value.set(9999, 9999)
+      mat.uniforms.uImpact.value = 0
+    }
+    wasActive.current = isActive
+
+    // ── Projection de la souris (NDC → plan z=0) ──────────────────────
+    // Le seuil détecte UN mouvement (oui/non) — il n'amplifie pas l'impulsion.
+    const MOTION_THRESHOLD = 0.006   // wu/frame — sous ce seuil = "statique"
+    let mX = 9999, mY = 9999
 
     if (isActive) {
-      // World-space mouse projection onto z=0 plane (no GC allocs)
-      _vProj.set(state.pointer.x, state.pointer.y, 0.5).unproject(state.camera)
-      _dProj.copy(_vProj).sub(state.camera.position).normalize()
+      _vRay.set(state.pointer.x, state.pointer.y, 0.5).unproject(state.camera)
+      _dRay.copy(_vRay).sub(state.camera.position).normalize()
       const camZ = state.camera.position.z
-      if (Math.abs(_dProj.z) > 0.001) {
-        const t = -camZ / _dProj.z
-        _mProj.copy(state.camera.position).addScaledVector(_dProj, t)
-
-        // Is mouse within the word's influence zone?
-        const nearWord = Math.abs(_mProj.x) < 10.5 && Math.abs(_mProj.y) < 3.5
-
-        if (nearWord) {
-          // Update sticky position + ramp influence fast
-          mat.uniforms.uMousePosLast.value.set(_mProj.x, _mProj.y)
-          mat.uniforms.uMouseInfluence.value = THREE.MathUtils.lerp(
-            mat.uniforms.uMouseInfluence.value, 1.0, 0.12
-          )
-        } else {
-          // Freeze sticky position; influence decays slowly → gradual return
-          mat.uniforms.uMouseInfluence.value = THREE.MathUtils.lerp(
-            mat.uniforms.uMouseInfluence.value, 0.0, 0.022
-          )
+      if (Math.abs(_dRay.z) > 0.001) {
+        const tRay = -camZ / _dRay.z
+        _hRay.copy(state.camera.position).addScaledVector(_dRay, tRay)
+        if (Math.abs(_hRay.x) < 12 && Math.abs(_hRay.y) < 5) {
+          mX = _hRay.x
+          mY = _hRay.y
         }
       }
-    } else {
-      // Not active — decay influence
-      mat.uniforms.uMouseInfluence.value = THREE.MathUtils.lerp(
-        mat.uniforms.uMouseInfluence.value, 0.0, 0.022
-      )
     }
+
+    const nearWord = mX < 9000
+
+    if (nearWord) {
+      frozenPos.current.set(mX, mY)
+
+      const prevX = prevWorld.current.x
+      const prevY = prevWorld.current.y
+      const rawDX = prevX > 9000 ? 0 : mX - prevX
+      const rawDY = prevY > 9000 ? 0 : mY - prevY
+      const rawMotion = Math.sqrt(rawDX * rawDX + rawDY * rawDY)
+
+      if (rawMotion > MOTION_THRESHOLD) {
+        // Mouvement détecté → direction = vecteur normalisé du déplacement
+        // (la magnitude est jetée — on ne garde QUE la direction).
+        const inv = 1 / rawMotion
+        smoothDir.current.x = THREE.MathUtils.lerp(smoothDir.current.x, rawDX * inv, 0.5)
+        smoothDir.current.y = THREE.MathUtils.lerp(smoothDir.current.y, rawDY * inv, 0.5)
+        const sLen = Math.hypot(smoothDir.current.x, smoothDir.current.y)
+        if (sLen > 0.001) {
+          smoothDir.current.x /= sLen
+          smoothDir.current.y /= sLen
+        }
+        // Ramp-up rapide vers 1.0 — intensité CONSTANTE (pas de Math.min(rawMotion, …))
+        wakeIntensity.current = THREE.MathUtils.lerp(wakeIntensity.current, 1.0, 0.35)
+      } else {
+        // Statique sur le mot → on désamorce le sillage, mais doucement →
+        // le zigzag continue d'osciller pendant la décroissance (~0.6 s) →
+        // retour méandré, pas de snap.
+        wakeIntensity.current = THREE.MathUtils.lerp(wakeIntensity.current, 0, 0.04)
+      }
+
+      prevWorld.current.set(mX, mY)
+    } else {
+      // Souris hors-zone : même décroissance organique. La direction reste
+      // figée à sa dernière valeur → le sillage continue dans la dernière
+      // direction connue, pendant que l'amplitude s'éteint.
+      prevWorld.current.set(9999, 9999)
+      wakeIntensity.current = THREE.MathUtils.lerp(wakeIntensity.current, 0, 0.05)
+    }
+
+    mat.uniforms.uMousePos.value.set(frozenPos.current.x, frozenPos.current.y)
+    mat.uniforms.uMouseDir.value.set(smoothDir.current.x, smoothDir.current.y)
+    mat.uniforms.uImpact.value = wakeIntensity.current
   })
+
+  // ── Rendu ─────────────────────────────────────────────────────────────
+  // Avant que les buffers soient prêts (fonts.ready), on ne rend rien.
+  if (!buffers) return null
 
   return (
     <group position={[0, 0, 0]}>
       <points ref={pointsRef}>
         <bufferGeometry>
-          <bufferAttribute args={[positions, 3]} attach="attributes-aTarget" />
-          <bufferAttribute args={[positions, 3]} attach="attributes-position" />
-          <bufferAttribute args={[offsets,   1]} attach="attributes-aOffset" />
+          <bufferAttribute args={[buffers.positions, 3]} attach="attributes-position" />
+          <bufferAttribute args={[buffers.seeds,     1]} attach="attributes-aSeed"    />
+          <bufferAttribute args={[buffers.layers,    1]} attach="attributes-aLayer"   />
         </bufferGeometry>
         <shaderMaterial
           vertexShader={vert}
@@ -261,11 +472,13 @@ export default function SocialFormation({
           uniforms={uniforms}
           transparent
           depthWrite={false}
-          blending={THREE.AdditiveBlending}
+          depthTest={false}
+          // Normal blending — voir SKILL §5. Additif compoundait en blanc.
+          blending={THREE.NormalBlending}
         />
       </points>
 
-      {/* Hit zone — only when active */}
+      {/* Zone de hit invisible — détection hover/click */}
       {isActive && (
         <mesh
           onPointerEnter={(e) => {
@@ -283,7 +496,7 @@ export default function SocialFormation({
             onClick()
           }}
         >
-          <boxGeometry args={[16, 6, 1.5]} />
+          <boxGeometry args={[18, 7, 4]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} depthTest={false} />
         </mesh>
       )}

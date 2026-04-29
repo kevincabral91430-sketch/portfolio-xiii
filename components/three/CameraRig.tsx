@@ -85,17 +85,25 @@ export default function CameraRig({ activeChapter }: CameraRigProps) {
     }
 
     // ── Mouse parallax — eases in only after 60% of intro ────────────────────
-    const parallaxWeight = Math.max(0, introRaw * (1 / 0.40) - 1.5)  // 0 until 60%, then 0→1
+    // Social chapter: much stronger amplitude (×6) + faster lerp → "camera observes
+    // the formation" — combined with the Z ±3.5 particle depth this reads as real
+    // 3D volume as the camera tilts toward the cursor.
+    const isSocial = activeChapter.id === "social"
+    const parallaxWeight = Math.max(0, introRaw * (1 / 0.40) - 1.5)
+    const mouseLerp = isSocial ? 0.055 : 0.028
     smoothMouse.current.x = THREE.MathUtils.lerp(
-      smoothMouse.current.x, mouse.current.x * Math.min(parallaxWeight, 1), 0.028
+      smoothMouse.current.x, mouse.current.x * Math.min(parallaxWeight, 1), mouseLerp
     )
     smoothMouse.current.y = THREE.MathUtils.lerp(
-      smoothMouse.current.y, mouse.current.y * Math.min(parallaxWeight, 1), 0.028
+      smoothMouse.current.y, mouse.current.y * Math.min(parallaxWeight, 1), mouseLerp
     )
 
+    const mouseAmpX = isSocial ? 1.40 : 0.22
+    const mouseAmpY = isSocial ? 0.70 : 0.11
+
     tempPos.current.copy(blendPos.current)
-    tempPos.current.x += smoothMouse.current.x * 0.22
-    tempPos.current.y += smoothMouse.current.y * 0.11
+    tempPos.current.x += smoothMouse.current.x * mouseAmpX
+    tempPos.current.y += smoothMouse.current.y * mouseAmpY
 
     // ── Position — noble slow glide between chapters (1.6 post-intro) ─────────
     const posLambda = introRaw < 1 ? 3.2 : 1.6

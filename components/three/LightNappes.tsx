@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useMemo } from "react"
+import { useRef, useMemo, useEffect } from "react"
 import { useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 
@@ -17,28 +17,29 @@ uniform float uTime;
 uniform float uPhase;
 uniform float uSpeed;
 uniform float uAlphaScale;
-uniform vec3 uColor;
+uniform float uTintAmt;   // how much the nappe shifts toward weapon tint
+uniform vec3  uColor;     // base nappe colour
+uniform vec3  uTint;      // active weapon tint (lerped slowly)
 varying vec2 vUv;
 
 void main() {
   float dx = vUv.x - 0.5;
 
-  // Organic width variation over time — speed-controlled
   float widthMod = 1.0 + sin(uTime * uSpeed + uPhase) * 0.18;
   float beam     = exp(-dx * dx * 20.0 * widthMod);
+  float core     = exp(-dx * dx * 75.0 * widthMod);
 
-  // Brighter inner core — creates depth inside the nappe
-  float core = exp(-dx * dx * 75.0 * widthMod);
-
-  // Top & bottom fade — gentle, not harsh
   float fadeY = smoothstep(0.0, 0.16, vUv.y) * smoothstep(1.0, 0.72, vUv.y);
 
-  // Slow undulation along height — speed-controlled
   float ripple = sin(vUv.y * 5.5 - uTime * uSpeed * 3.27 + uPhase) * 0.5 + 0.5;
   float energy = (beam * 0.82 + core * 0.18) * fadeY * (0.48 + ripple * 0.52);
 
+  // Cool nappes shift toward the active weapon colour (20%).
+  // Warm Farplane nappes stay mostly gold (8% shift only).
+  vec3 finalColor = mix(uColor, uTint, uTintAmt);
+
   float alpha = energy * 0.062 * uAlphaScale;
-  gl_FragColor = vec4(uColor, alpha);
+  gl_FragColor = vec4(finalColor, alpha);
 }
 `
 
@@ -48,18 +49,15 @@ interface NappeData {
   scale:      [number, number, number]
   color:      THREE.Vector3
   phase:      number
-  /** Animation speed multiplier — lower = more sacred/slow */
   speed:      number
-  /** Alpha relative to base 0.062 — Farplane veils are more transparent */
   alphaScale: number
-  /** Vertical drift amplitude in world units */
   driftAmp:   number
-  /** Vertical drift oscillation speed */
   driftSpeed: number
+  tintAmt:    number   // 0.20 for cool nappes, 0.08 for warm Farplane nappes
 }
 
 const NAPPES: NappeData[] = [
-  // ─── Water caustic nappes — cool blue-teal, subsurface ocean light ────────
+  // ─── Water caustic nappes — cool blue-teal ────────────────────────────────
   {
     position:   [-8,   4, -18],
     rotation:   [0,  0.3, 0],
@@ -70,6 +68,7 @@ const NAPPES: NappeData[] = [
     alphaScale: 1.0,
     driftAmp:   0.9,
     driftSpeed: 0.075,
+    tintAmt:    0.20,
   },
   {
     position:   [10,  2, -22],
@@ -81,6 +80,7 @@ const NAPPES: NappeData[] = [
     alphaScale: 1.0,
     driftAmp:   0.9,
     driftSpeed: 0.075,
+    tintAmt:    0.20,
   },
   {
     position:   [0,  -2, -20],
@@ -92,20 +92,21 @@ const NAPPES: NappeData[] = [
     alphaScale: 1.0,
     driftAmp:   0.9,
     driftSpeed: 0.075,
+    tintAmt:    0.20,
   },
   // ─── Farplane veils — warm gold, sacred light descending from above ────────
-  // These sit high in the scene and drift very slowly — they evoke the membrane
-  // between Spira and the Farplane: translucent, luminous, memorial.
+  // tintAmt=0.08 — they stay mostly gold (Farplane is immutable)
   {
     position:   [-6,  10, -24],
     rotation:   [0, 0.15, 0],
     scale:      [8,  20,  1],
     color:      new THREE.Vector3(0.72, 0.48, 0.10),
     phase:      0.8,
-    speed:      0.06,     // slow — sacred, not energetic
-    alphaScale: 0.70,     // more transparent than water nappes
-    driftAmp:   0.50,     // gentler drift
+    speed:      0.06,
+    alphaScale: 0.70,
+    driftAmp:   0.50,
     driftSpeed: 0.042,
+    tintAmt:    0.08,
   },
   {
     position:   [8,  12, -26],
@@ -117,11 +118,18 @@ const NAPPES: NappeData[] = [
     alphaScale: 0.65,
     driftAmp:   0.50,
     driftSpeed: 0.038,
+    tintAmt:    0.08,
   },
 ]
 
-export default function LightNappes() {
+interface LightNappesProps {
+  tint?: [number, number, number]
+}
+
+export default function LightNappes({ tint = [0.404, 0.91, 0.976] }: LightNappesProps) {
   const meshRefs = useRef<(THREE.Mesh | null)[]>([])
+  const tintRef  = useRef(tint)
+  useEffect(() => { tintRef.current = tint }, [tint])
 
   const uniformsArray = useMemo(
     () =>
@@ -130,21 +138,34 @@ export default function LightNappes() {
         uPhase:      { value: n.phase },
         uSpeed:      { value: n.speed },
         uAlphaScale: { value: n.alphaScale },
-        uColor:      { value: n.color },
+        uTintAmt:    { value: n.tintAmt },
+        uColor:      { value: n.color.clone() },
+        uTint:       { value: new THREE.Vector3(...tint) },
       })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   )
 
   useFrame((state) => {
     const t = state.clock.elapsedTime
+    const [tr, tg, tb] = tintRef.current
+
     for (let i = 0; i < NAPPES.length; i++) {
       const mesh = meshRefs.current[i]
       if (!mesh) continue
       const mat = mesh.material as THREE.ShaderMaterial
       mat.uniforms.uTime.value = t
+
+      // Vertical drift
       mesh.position.y =
         NAPPES[i].position[1] +
         Math.sin(t * NAPPES[i].driftSpeed + NAPPES[i].phase) * NAPPES[i].driftAmp
+
+      // Slow tint lerp — nappe colour breathes with active weapon
+      const v = mat.uniforms.uTint.value as THREE.Vector3
+      v.x = THREE.MathUtils.lerp(v.x, tr, 0.006)
+      v.y = THREE.MathUtils.lerp(v.y, tg, 0.006)
+      v.z = THREE.MathUtils.lerp(v.z, tb, 0.006)
     }
   })
 

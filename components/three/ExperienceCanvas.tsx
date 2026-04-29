@@ -10,6 +10,7 @@ import AbyssBackground from "./AbyssBackground"
 import LightNappes from "./LightNappes"
 import WaterVeil from "./WaterVeil"
 import SocialScene from "./SocialScene"
+import MistLayer from "./MistLayer"
 import { weapons } from "@/lib/three/weaponData"
 import type { Chapter } from "@/lib/three/chapters"
 
@@ -60,11 +61,15 @@ export default function ExperienceCanvas({
       {/* Background — z=-35, reacts to active weapon tint */}
       <AbyssBackground tint={activeTint} />
 
-      {/* Water veil — z=-10, intermediate depth layer for parallax */}
-      <WaterVeil />
+      {/* Water veils — two depths create parallax as camera moves between chapters */}
+      <WaterVeil zPos={-10} alphaScale={1.0} tileScale={2.8} />
+      <WaterVeil zPos={-20} alphaScale={0.55} tileScale={2.0} />
 
-      <LightNappes />
-      <ParticleField />
+      {/* Deep volumetric mist — sacred underwater fog at z=-22 */}
+      <MistLayer />
+
+      <LightNappes tint={activeTint} />
+      <ParticleField tint={activeTint} />
 
       {/* Weapon auras — behind sprites, coloured per weapon tint */}
       {weapons.map((weapon) => (

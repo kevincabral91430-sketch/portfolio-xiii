@@ -31,9 +31,9 @@ export const cameraShots: Record<string, CameraShot> = {
     fov: 38,   // légèrement ouvert — créature spirituelle, présence organique
   },
   auron: {
-    position: [-15.5, 0.2, 5],
+    position: [-15.5, 0.2, 8],
     target: [-17.5, -1, -3],
-    fov: 32,   // le plus étroit — katana massif, compression cinématique maximale
+    fov: 38,   // élargi — katana massif (h=6.4), recul caméra pour visibilité complète
   },
   wakka: {
     position: [14.5, -4.5, 6],
@@ -51,9 +51,9 @@ export const cameraShots: Record<string, CameraShot> = {
     fov: 42,   // le plus large — God Hand, agilité, vitesse
   },
   kimahri: {
-    position: [-1.5, -10.5, 2],
+    position: [-1.5, -10.5, 7],
     target: [-3.5, -11, -6],
-    fov: 30,   // ultra-serré — lance majestueuse, verticalité dramatique
+    fov: 36,   // élargi — lance (h=6.72), recul caméra pour visibilité complète
   },
   // Social chapter — telephoto framing for monumental presence
   social: {
