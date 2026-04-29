@@ -38,7 +38,7 @@ void main() {
   // Warm Farplane nappes stay mostly gold (8% shift only).
   vec3 finalColor = mix(uColor, uTint, uTintAmt);
 
-  float alpha = energy * 0.062 * uAlphaScale;
+  float alpha = energy * 0.082 * uAlphaScale;
   gl_FragColor = vec4(finalColor, alpha);
 }
 `
@@ -64,10 +64,10 @@ const NAPPES: NappeData[] = [
     scale:      [6,  28,  1],
     color:      new THREE.Vector3(0.0, 0.52, 0.82),
     phase:      0.0,
-    speed:      0.11,
+    speed:      0.17,
     alphaScale: 1.0,
-    driftAmp:   0.9,
-    driftSpeed: 0.075,
+    driftAmp:   1.30,
+    driftSpeed: 0.115,
     tintAmt:    0.20,
   },
   {
@@ -76,10 +76,10 @@ const NAPPES: NappeData[] = [
     scale:      [5, 24,   1],
     color:      new THREE.Vector3(0.08, 0.38, 0.88),
     phase:      1.8,
-    speed:      0.11,
+    speed:      0.17,
     alphaScale: 1.0,
-    driftAmp:   0.9,
-    driftSpeed: 0.075,
+    driftAmp:   1.30,
+    driftSpeed: 0.115,
     tintAmt:    0.20,
   },
   {
@@ -88,24 +88,23 @@ const NAPPES: NappeData[] = [
     scale:      [7,  30,  1],
     color:      new THREE.Vector3(0.0, 0.58, 0.72),
     phase:      3.2,
-    speed:      0.11,
+    speed:      0.17,
     alphaScale: 1.0,
-    driftAmp:   0.9,
-    driftSpeed: 0.075,
+    driftAmp:   1.30,
+    driftSpeed: 0.115,
     tintAmt:    0.20,
   },
   // ─── Farplane veils — warm gold, sacred light descending from above ────────
-  // tintAmt=0.08 — they stay mostly gold (Farplane is immutable)
   {
     position:   [-6,  10, -24],
     rotation:   [0, 0.15, 0],
     scale:      [8,  20,  1],
     color:      new THREE.Vector3(0.72, 0.48, 0.10),
     phase:      0.8,
-    speed:      0.06,
-    alphaScale: 0.70,
-    driftAmp:   0.50,
-    driftSpeed: 0.042,
+    speed:      0.09,
+    alphaScale: 0.80,
+    driftAmp:   0.75,
+    driftSpeed: 0.065,
     tintAmt:    0.08,
   },
   {
@@ -114,10 +113,10 @@ const NAPPES: NappeData[] = [
     scale:      [6,  18,  1],
     color:      new THREE.Vector3(0.68, 0.40, 0.08),
     phase:      2.5,
-    speed:      0.06,
-    alphaScale: 0.65,
-    driftAmp:   0.50,
-    driftSpeed: 0.038,
+    speed:      0.09,
+    alphaScale: 0.75,
+    driftAmp:   0.75,
+    driftSpeed: 0.060,
     tintAmt:    0.08,
   },
 ]

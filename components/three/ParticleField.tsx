@@ -16,9 +16,9 @@ import * as THREE from "three"
 //
 // Upward bias: all layers drift slowly upward (rising souls). Deep = slowest.
 
-const DEEP_COUNT  = 600
-const MID_COUNT   = 500
-const NEAR_COUNT  = 150
+const DEEP_COUNT  = 900
+const MID_COUNT   = 700
+const NEAR_COUNT  = 280
 const TOTAL       = DEEP_COUNT + MID_COUNT + NEAR_COUNT
 
 const particleVert = `
@@ -36,7 +36,7 @@ void main() {
 
   // ── Upward drift — souls rising toward the Farplane ──────────────────────
   // Rise speed scales with layer: deep slowest, near fastest.
-  float riseSpeed = (0.028 + aLayer * 0.022) * aSpeed;
+  float riseSpeed = (0.044 + aLayer * 0.034) * aSpeed;  // ×1.55 — âmes qui s'élèvent vraiment
   float yProgress = mod(pos.y + uTime * riseSpeed + aOffset * 32.0, 32.0) - 16.0;
   pos.y = yProgress;
 
@@ -46,22 +46,22 @@ void main() {
   float streamPhase = aStream * 1.0472;          // 2π/6 per stream
   float streamFreq  = 0.075 + aStream * 0.013;
 
-  pos.x += sin(uTime * streamFreq       + streamPhase + aOffset * 6.28) * 0.85
-         + sin(uTime * streamFreq * 0.5 + aOffset * 3.14 + 1.7)         * 0.30;
-  pos.z += cos(uTime * streamFreq * 0.7 + streamPhase)                  * 0.38
-         + cos(uTime * streamFreq * 0.4 + aOffset * 4.71 + 0.9)         * 0.16;
+  pos.x += sin(uTime * streamFreq       + streamPhase + aOffset * 6.28) * 1.20
+         + sin(uTime * streamFreq * 0.5 + aOffset * 3.14 + 1.7)         * 0.45;
+  pos.z += cos(uTime * streamFreq * 0.7 + streamPhase)                  * 0.55
+         + cos(uTime * streamFreq * 0.4 + aOffset * 4.71 + 0.9)         * 0.24;
 
   vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
   gl_Position = projectionMatrix * mvPosition;
 
   // ── Point size — larger for near layer, smaller for deep ─────────────────
-  float baseSize  = 0.9 + aLayer * 1.5;   // deep=0.9  mid=2.4  near=3.9
-  float sizePulse = 1.0 + sin(uTime * aSpeed * 0.8 + aOffset * 5.0) * 0.18;
+  float baseSize  = 1.1 + aLayer * 1.9;   // deep=1.1  mid=3.0  near=4.9
+  float sizePulse = 1.0 + sin(uTime * aSpeed * 0.8 + aOffset * 5.0) * 0.22;
   gl_PointSize = baseSize * (280.0 / -mvPosition.z) * sizePulse;
-  gl_PointSize = clamp(gl_PointSize, 0.3, 4.8);
+  gl_PointSize = clamp(gl_PointSize, 0.4, 7.5);
 
   // ── Alpha — deeper = dimmer + individual twinkle ──────────────────────────
-  float baseAlpha = 0.08 + aLayer * 0.17;
+  float baseAlpha = 0.11 + aLayer * 0.20;
   float fadeY     = 1.0 - abs(yProgress / 16.0);
   float twinkle   = sin(uTime * (1.1 + aOffset * 3.8) + aOffset * 8.2) * 0.32 + 0.68;
   vAlpha = baseAlpha * fadeY * twinkle;

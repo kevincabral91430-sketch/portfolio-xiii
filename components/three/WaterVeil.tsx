@@ -30,9 +30,9 @@ void main() {
   vec2 uv = vUv * uTileScale;
 
   // Two-layer caustic interference
-  float cx1 = sin(uv.x * 8.0  + uTime * 0.16) * cos(uv.y * 6.0  - uTime * 0.13);
-  float cx2 = cos(uv.x * 5.5  - uTime * 0.11 + 1.4) * sin(uv.y * 9.0  + uTime * 0.14);
-  float cx3 = sin(uv.x * 12.0 + uTime * 0.09 + 2.7) * cos(uv.y * 7.5  - uTime * 0.10);
+  float cx1 = sin(uv.x * 8.0  + uTime * 0.24) * cos(uv.y * 6.0  - uTime * 0.20);
+  float cx2 = cos(uv.x * 5.5  - uTime * 0.18 + 1.4) * sin(uv.y * 9.0  + uTime * 0.22);
+  float cx3 = sin(uv.x * 12.0 + uTime * 0.15 + 2.7) * cos(uv.y * 7.5  - uTime * 0.16);
 
   float caustic = smoothstep(0.35, 1.0, (cx1 * 0.50 + cx2 * 0.35 + cx3 * 0.15) * 0.5 + 0.5);
 
@@ -44,7 +44,7 @@ void main() {
 
   float breath = 0.80 + sin(uTime * 0.26) * 0.20;
 
-  float alpha = caustic * edgeFade * breath * 0.038 * uAlphaScale;
+  float alpha = caustic * edgeFade * breath * 0.052 * uAlphaScale;
   vec3  color = vec3(0.04, 0.34, 0.60);
 
   gl_FragColor = vec4(color, alpha);

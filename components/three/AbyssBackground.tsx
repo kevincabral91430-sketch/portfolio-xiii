@@ -54,16 +54,16 @@ void main() {
   float fade = uv.y * smoothstep(1.0, 0.62, uv.y);
 
   // Each shaft sways at its own unique speed and amplitude
-  float sway1 = sin(uv.x * 2.0  + uTime * 0.031) * 0.08;
-  float sway2 = cos(uv.x * 1.7  - uTime * 0.027 + 0.8) * 0.10;
-  float sway3 = sin(uv.x * 2.5  + uTime * 0.019 + 2.1) * 0.07;
-  float sway4 = sin(uv.x * 1.3  + uTime * 0.023) * 0.12;
+  float sway1 = sin(uv.x * 2.0  + uTime * 0.052) * 0.10;
+  float sway2 = cos(uv.x * 1.7  - uTime * 0.045 + 0.8) * 0.13;
+  float sway3 = sin(uv.x * 2.5  + uTime * 0.034 + 2.1) * 0.09;
+  float sway4 = sin(uv.x * 1.3  + uTime * 0.040) * 0.15;
 
-  // Shaft positions drift slowly (very slow oscillation)
-  float pos1  = 0.22 + sin(uTime * 0.012) * 0.022;
-  float pos2  = 0.55 + cos(uTime * 0.009 + 1.1) * 0.018;
-  float pos3  = 0.79 + sin(uTime * 0.011 + 2.4) * 0.016;
-  float pos4  = 0.43 + cos(uTime * 0.008 + 0.5) * 0.024;
+  // Shaft positions drift — now perceptibly alive
+  float pos1  = 0.22 + sin(uTime * 0.020) * 0.032;
+  float pos2  = 0.55 + cos(uTime * 0.016 + 1.1) * 0.028;
+  float pos3  = 0.79 + sin(uTime * 0.018 + 2.4) * 0.026;
+  float pos4  = 0.43 + cos(uTime * 0.014 + 0.5) * 0.036;
 
   float r1 = ray(uv.x + sway1, pos1, 80.0);
   float r2 = ray(uv.x + sway2, pos2, 110.0);
@@ -72,18 +72,18 @@ void main() {
 
   vec3 rayCol  = vec3(0.0, 0.30, 0.52);
   vec3 rayGold = vec3(0.65, 0.42, 0.08);
-  bg += rayCol  * (r1 * 0.030 + r2 * 0.022 + r3 * 0.018) * fade;
-  bg += rayGold * r4 * 0.018 * fade;
+  bg += rayCol  * (r1 * 0.038 + r2 * 0.028 + r3 * 0.024) * fade;
+  bg += rayGold * r4 * 0.026 * fade;
 
   // ── Fluid noise — 4 octaves ────────────────────────────────────────────
-  float n1 = sin(uv.x * 2.8  + uTime * 0.070) * cos(uv.y * 3.6  - uTime * 0.050);
-  float n2 = sin(uv.x * 5.4  - uTime * 0.060 + 1.2) * sin(uv.y * 4.1  + uTime * 0.080);
-  float n3 = cos(uv.x * 9.2  + uTime * 0.040) * cos(uv.y * 7.8  - uTime * 0.050 + 2.4);
-  float n4 = sin(uv.x * 14.0 - uTime * 0.030 + 4.1) * cos(uv.y * 11.5 + uTime * 0.025);
+  float n1 = sin(uv.x * 2.8  + uTime * 0.110) * cos(uv.y * 3.6  - uTime * 0.082);
+  float n2 = sin(uv.x * 5.4  - uTime * 0.095 + 1.2) * sin(uv.y * 4.1  + uTime * 0.125);
+  float n3 = cos(uv.x * 9.2  + uTime * 0.068) * cos(uv.y * 7.8  - uTime * 0.078 + 2.4);
+  float n4 = sin(uv.x * 14.0 - uTime * 0.052 + 4.1) * cos(uv.y * 11.5 + uTime * 0.042);
 
   float noise = n1 * 0.40 + n2 * 0.28 + n3 * 0.20 + n4 * 0.12;
   float glow  = smoothstep(-0.38, 0.92, noise);
-  bg += vec3(0.0, 0.28, 0.48) * glow * 0.042;
+  bg += vec3(0.0, 0.28, 0.48) * glow * 0.062;
 
   // ── Central luminosity — shifts toward weapon tint ─────────────────────
   // The weapon's spiritual presence concentrates at the centre of the water.
@@ -92,8 +92,8 @@ void main() {
   bg += mix(vec3(0.0, 0.10, 0.22), uTint * 0.55, 0.38) * cGlow * 0.120;
 
   // ── Moonflow caustics ──────────────────────────────────────────────────
-  float cx = sin(uv.x * 18.0 + uTime * 0.12) * cos(uv.x * 11.0 - uTime * 0.08);
-  float cy = cos(uv.y * 14.0 - uTime * 0.09) * sin(uv.y * 9.0  + uTime * 0.11);
+  float cx = sin(uv.x * 18.0 + uTime * 0.18) * cos(uv.x * 11.0 - uTime * 0.13);
+  float cy = cos(uv.y * 14.0 - uTime * 0.15) * sin(uv.y * 9.0  + uTime * 0.17);
   float caustic  = smoothstep(0.60, 1.0, (cx + cy) * 0.5 + 0.5);
   float caustBand = smoothstep(0.0, 0.12, 1.0 - abs(uv.y - 0.75)) * 0.018;
   bg += vec3(0.35, 0.72, 0.92) * caustic * caustBand;
@@ -103,33 +103,45 @@ void main() {
   bg += vec3(0.0, 0.42, 0.62) * band;
 
   // ── Pyrefly motes — warm gold/amber ───────────────────────────────────
-  vec2 m1 = vec2(0.27 + sin(uTime * 0.105) * 0.062, 0.61 + cos(uTime * 0.088) * 0.042);
-  vec2 m2 = vec2(0.71 + cos(uTime * 0.138) * 0.051, 0.37 + sin(uTime * 0.097) * 0.053);
-  vec2 m3 = vec2(0.51 + sin(uTime * 0.072) * 0.068, 0.77 + cos(uTime * 0.115) * 0.032);
-  vec2 m4 = vec2(0.17 + cos(uTime * 0.123) * 0.044, 0.44 + sin(uTime * 0.083) * 0.058);
-  vec2 m5 = vec2(0.84 + sin(uTime * 0.091) * 0.038, 0.55 + cos(uTime * 0.107) * 0.047);
-  vec2 m6 = vec2(0.38 + cos(uTime * 0.094) * 0.055, 0.28 + sin(uTime * 0.076) * 0.048);
-  vec2 m7 = vec2(0.63 + sin(uTime * 0.117) * 0.042, 0.68 + cos(uTime * 0.099) * 0.036);
-  vec2 m8 = vec2(0.46 + cos(uTime * 0.081) * 0.059, 0.52 + sin(uTime * 0.113 + 1.9) * 0.038);
+  vec2 m1  = vec2(0.27 + sin(uTime * 0.138) * 0.072, 0.61 + cos(uTime * 0.112) * 0.052);
+  vec2 m2  = vec2(0.71 + cos(uTime * 0.175) * 0.061, 0.37 + sin(uTime * 0.124) * 0.063);
+  vec2 m3  = vec2(0.51 + sin(uTime * 0.096) * 0.078, 0.77 + cos(uTime * 0.148) * 0.042);
+  vec2 m4  = vec2(0.17 + cos(uTime * 0.158) * 0.054, 0.44 + sin(uTime * 0.107) * 0.068);
+  vec2 m5  = vec2(0.84 + sin(uTime * 0.119) * 0.048, 0.55 + cos(uTime * 0.139) * 0.057);
+  vec2 m6  = vec2(0.38 + cos(uTime * 0.122) * 0.065, 0.28 + sin(uTime * 0.101) * 0.058);
+  vec2 m7  = vec2(0.63 + sin(uTime * 0.151) * 0.052, 0.68 + cos(uTime * 0.128) * 0.046);
+  vec2 m8  = vec2(0.46 + cos(uTime * 0.105) * 0.069, 0.52 + sin(uTime * 0.145 + 1.9) * 0.048);
+  // 4 extra motes for more density
+  vec2 m9  = vec2(0.33 + sin(uTime * 0.087 + 0.7) * 0.055, 0.83 + cos(uTime * 0.118) * 0.038);
+  vec2 m10 = vec2(0.76 + cos(uTime * 0.131 + 2.1) * 0.044, 0.22 + sin(uTime * 0.094) * 0.060);
+  vec2 m11 = vec2(0.58 + sin(uTime * 0.162 + 1.3) * 0.050, 0.47 + cos(uTime * 0.109) * 0.043);
+  vec2 m12 = vec2(0.12 + cos(uTime * 0.143 + 3.0) * 0.058, 0.70 + sin(uTime * 0.133) * 0.035);
 
-  float p1 = exp(-length((uv - m1) * vec2(72.0, 72.0)));
-  float p2 = exp(-length((uv - m2) * vec2(88.0, 88.0)));
-  float p3 = exp(-length((uv - m3) * vec2(78.0, 78.0)));
-  float p4 = exp(-length((uv - m4) * vec2(66.0, 66.0)));
-  float p5 = exp(-length((uv - m5) * vec2(95.0, 95.0)));
-  float p6 = exp(-length((uv - m6) * vec2(82.0, 82.0)));
-  float p7 = exp(-length((uv - m7) * vec2(70.0, 70.0)));
-  float p8 = exp(-length((uv - m8) * vec2(85.0, 85.0)));
+  float p1  = exp(-length((uv - m1)  * vec2(72.0, 72.0)));
+  float p2  = exp(-length((uv - m2)  * vec2(88.0, 88.0)));
+  float p3  = exp(-length((uv - m3)  * vec2(78.0, 78.0)));
+  float p4  = exp(-length((uv - m4)  * vec2(66.0, 66.0)));
+  float p5  = exp(-length((uv - m5)  * vec2(95.0, 95.0)));
+  float p6  = exp(-length((uv - m6)  * vec2(82.0, 82.0)));
+  float p7  = exp(-length((uv - m7)  * vec2(70.0, 70.0)));
+  float p8  = exp(-length((uv - m8)  * vec2(85.0, 85.0)));
+  float p9  = exp(-length((uv - m9)  * vec2(92.0, 92.0)));
+  float p10 = exp(-length((uv - m10) * vec2(75.0, 75.0)));
+  float p11 = exp(-length((uv - m11) * vec2(80.0, 80.0)));
+  float p12 = exp(-length((uv - m12) * vec2(68.0, 68.0)));
 
-  float motePulse = sin(uTime * 0.38) * 0.5 + 0.5;
+  float motePulse  = sin(uTime * 0.48) * 0.5 + 0.5;
+  float motePulse2 = sin(uTime * 0.31 + 1.57) * 0.5 + 0.5;  // offset pulse
 
   vec3 pyreflyGold = vec3(1.00, 0.72, 0.18);
-  float moteWarm = p1 + p3 + p5 * motePulse + p6 + p7 * (1.0 - motePulse * 0.4) + p8 * motePulse;
-  bg += pyreflyGold * moteWarm * 0.072;
+  float moteWarm = p1 + p3 + p5 * motePulse + p6 + p7 * (1.0 - motePulse * 0.4)
+                 + p8 * motePulse + p9 * motePulse2 + p11;
+  bg += pyreflyGold * moteWarm * 0.088;
 
   vec3 pyreflyCool = vec3(0.70, 0.88, 1.00);
-  float moteCool = p2 * motePulse + p4 * (1.0 - motePulse * 0.5);
-  bg += pyreflyCool * moteCool * 0.038;
+  float moteCool = p2 * motePulse + p4 * (1.0 - motePulse * 0.5)
+                 + p10 * motePulse2 + p12;
+  bg += pyreflyCool * moteCool * 0.052;
 
   // ── Vignette ───────────────────────────────────────────────────────────
   vec2 vigUv = uv * (1.0 - uv.yx);
