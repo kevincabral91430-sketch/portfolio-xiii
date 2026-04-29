@@ -95,7 +95,7 @@ void main() {
   float cluster = target.x * 0.6180 + target.y * 1.6180;
 
   // ── 1. Dérive simplex 3D — base ample, énergique ────────────────────────
-  float t  = uTime * 0.85;                                  // tempo +30 %
+  float t  = uTime * 1.05;                                  // tempo +54 %
   vec3 nv  = vec3(target.x * 0.55, target.y * 0.55, t + aSeed * 9.42);
 
   vec3 drift;
@@ -104,22 +104,23 @@ void main() {
   drift.z = snoise(nv + vec3(113.7, 211.1,  7.7));
 
   // Back drifte plus large (haze), front quasi figé pour la lisibilité du contour
-  float layerDriftMul = 1.0 + (2.0 - aLayer) * 0.22;       // back ×1.44, mid ×1.22, front ×1.00
-  drift *= 0.045 * layerDriftMul;                          // amplitude bumpée
+  float layerDriftMul = 1.0 + (2.0 - aLayer) * 0.30;       // back ×1.60, mid ×1.30, front ×1.00
+  drift *= 0.065 * layerDriftMul;                          // amplitude +44 % — particules "dansent"
 
   // ── 2. Micro-jitter haute fréquence — fourmillement par-particule ──────
   // Tempo encore plus rapide → l'œil capte une vraie agitation organique
-  vec3 nv2 = vec3(target.xy * 1.4, uTime * 2.4 + aSeed * 23.0);
+  vec3 nv2 = vec3(target.xy * 1.4, uTime * 3.0 + aSeed * 23.0);  // +25 % tempo
   vec3 microJitter = vec3(
     snoise(nv2),
     snoise(nv2 + vec3( 7.3, 17.1,  3.5)) * 0.9,
     snoise(nv2 + vec3(91.7, 41.3, 13.0))
   );
-  drift += microJitter * 0.018 * layerDriftMul;
+  drift += microJitter * 0.026 * layerDriftMul;  // +44 % fourmillement
 
-  // Respiration cluster — fréquence boostée encore
-  drift.y += sin(uTime * 1.05 + cluster)            * 0.011;
-  drift.x += cos(uTime * 0.92 + cluster * 1.21)     * 0.008;
+  // Respiration cluster — double rythme → sensation de "danse" (Lissajous)
+  drift.y += sin(uTime * 1.05 + cluster)             * 0.018;  // pulsation principale
+  drift.y += sin(uTime * 0.38 + cluster * 1.80)      * 0.013;  // houle lente (battement)
+  drift.x += cos(uTime * 0.92 + cluster * 1.21)      * 0.013;  // oscillation X marquée
 
   // ── 2.5 Présence statique — souris immobile mais influente ──────────────
   // Active dès que la souris est dans la zone (uPresence ≈ 1), indépendamment
@@ -180,8 +181,8 @@ void main() {
 
   // (b) Onde latérale ample : sin rapide + simplex moyen → zigzag franc
   float lateralWave =
-        sin(uTime * 2.4 + aSeed * 31.0)                                       * 0.65
-      + snoise(vec3(target.xy * 0.5, uTime * 1.7 + aSeed * 12.0))             * 0.95;
+        sin(uTime * 2.4 + aSeed * 31.0)                                       * 0.78
+      + snoise(vec3(target.xy * 0.5, uTime * 1.7 + aSeed * 12.0))             * 1.10;
 
   // Variation longitudinale plus marquée → certaines particules ralentissent,
   // d'autres accélèrent → la "trajectoire" elle-même varie particule par particule.
@@ -192,7 +193,7 @@ void main() {
 
   // (c) Amplitude — parallaxe par couche × force élevée
   float layerImp  = 0.78 + aLayer * 0.36;                   // 0.78 / 1.14 / 1.50
-  float baseForce = 1.40;                                   // 2.5× v5 → projection loin du mot
+  float baseForce = 1.60;                                   // +14 % → projection plus franche
   float amp       = falloff * uImpact * baseForce * layerImp;
   pos.xy += dispDir * amp;
   // Z modulé : projection 3D pendant l'éjection (lift / push back)
@@ -218,17 +219,17 @@ void main() {
 
   // ── Taille du point — sculpturale, fine, lisible (skill §6) ─────────────
   // Cible @ z=16 : back 1.5 / mid 2.7 / front 4.2 px → vrais points distincts
-  float baseSize = 0.11 + aLayer * 0.11;                    // 0.11 / 0.22 / 0.33
+  float baseSize = 0.13 + aLayer * 0.13;                    // 0.13 / 0.26 / 0.39
   float pxScale  = 220.0 / -mvPos.z;
   float hBoost   = 1.0 + uHover * 0.18;
-  gl_PointSize   = clamp(baseSize * pxScale * hBoost * uActive, 0.0, 6.0);
+  gl_PointSize   = clamp(baseSize * pxScale * hBoost * uActive, 0.0, 8.0);
 
   // ── Alpha — pas de twinkle, juste une variation très subtile ────────────
   // Skill §7 : amplitude max 0.06 — au-delà ça scintille / strobe.
   float tFreq    = 0.62 + aSeed * 1.20;
   float breathe  = 0.94 + 0.06 * sin(uTime * tFreq + aSeed * 17.3);
   // Couches en alpha croissante (skill §6) : back haze, front net
-  float layerAlpha = 0.18 + aLayer * 0.22;                  // back 0.18 / mid 0.40 / front 0.62
+  float layerAlpha = 0.22 + aLayer * 0.24;                  // back 0.22 / mid 0.46 / front 0.70
   vAlpha = uActive * layerAlpha * breathe;
   vLayer = aLayer;
 }
@@ -307,7 +308,8 @@ function buildParticleBuffers(targets: [number, number, number][]): ParticleBuff
     // Tirage de couche
     const r = rand()
     let layer: number, zLo: number, zHi: number
-    if (r < 0.25)      { layer = 0; zLo = Z_BACK_LO;  zHi = Z_BACK_HI  }
+    // 18 % back / 57 % mid / 25 % front — plus de corps sur la couche lisible
+    if (r < 0.18)      { layer = 0; zLo = Z_BACK_LO;  zHi = Z_BACK_HI  }
     else if (r < 0.75) { layer = 1; zLo = Z_MID_LO;   zHi = Z_MID_HI   }
     else               { layer = 2; zLo = Z_FRONT_LO; zHi = Z_FRONT_HI }
 

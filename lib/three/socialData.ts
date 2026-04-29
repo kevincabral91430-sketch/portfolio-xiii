@@ -46,7 +46,7 @@ export const socialLinks: SocialLink[] = [
       worldWidth: 16.0,
       // Densité ré-haussée pour la tenue de la forme (+22 %).
       // On reste sous le seuil "blob" : particules toujours distinctes.
-      count:      980,
+      count:      1380,
     },
   },
   {
@@ -60,7 +60,7 @@ export const socialLinks: SocialLink[] = [
     text: {
       lines:      [{ text: "LINKEDIN" }],
       worldWidth: 14.5,
-      count:      830,
+      count:      1180,
     },
   },
   {
@@ -78,7 +78,7 @@ export const socialLinks: SocialLink[] = [
         { text: "PRODUCTION", scale: 0.46 },
       ],
       worldWidth: 12.0,
-      count:      1170,
+      count:      1620,
     },
   },
 ]
