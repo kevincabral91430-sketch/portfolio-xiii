@@ -29,6 +29,7 @@ uniform float uHover;         // 0..1
 uniform vec2  uMousePos;      // position souris en unités-monde (z=0)
 uniform vec2  uMouseDir;      // unitaire — direction du dernier mouvement
 uniform float uImpact;        // 0..1 — intensité du sillage (AUCUNE dépendance vitesse)
+uniform float uPresence;      // 0..1 — souris présente dans la zone (≠ uImpact, persiste à l'arrêt)
 
 attribute float aSeed;        // 0..1 unique par particule
 attribute float aLayer;       // 0 = back, 1 = mid, 2 = front
@@ -93,8 +94,8 @@ void main() {
   // Phase per-cluster : particules d'une même région respirent en cohérence
   float cluster = target.x * 0.6180 + target.y * 1.6180;
 
-  // ── 1. Dérive simplex 3D — base lente, ample mais contenue ──────────────
-  float t  = uTime * 0.65;                                  // tempo ~1.55× plus rapide
+  // ── 1. Dérive simplex 3D — base ample, énergique ────────────────────────
+  float t  = uTime * 0.85;                                  // tempo +30 %
   vec3 nv  = vec3(target.x * 0.55, target.y * 0.55, t + aSeed * 9.42);
 
   vec3 drift;
@@ -104,62 +105,98 @@ void main() {
 
   // Back drifte plus large (haze), front quasi figé pour la lisibilité du contour
   float layerDriftMul = 1.0 + (2.0 - aLayer) * 0.22;       // back ×1.44, mid ×1.22, front ×1.00
-  drift *= 0.038 * layerDriftMul;                          // légère hausse vs v3
+  drift *= 0.045 * layerDriftMul;                          // amplitude bumpée
 
-  // ── 2. Micro-jitter haute fréquence — variations visibles, riches ──────
-  // Couche additive rapide → "fourmillement" subtil sans casser le contour.
-  // Échelle spatiale grande (×1.4) + tempo rapide (×1.8) → particules qui
-  // vibrent individuellement, pas de cohérence cluster sur cette couche.
-  vec3 nv2 = vec3(target.xy * 1.4, uTime * 1.8 + aSeed * 23.0);
+  // ── 2. Micro-jitter haute fréquence — fourmillement par-particule ──────
+  // Tempo encore plus rapide → l'œil capte une vraie agitation organique
+  vec3 nv2 = vec3(target.xy * 1.4, uTime * 2.4 + aSeed * 23.0);
   vec3 microJitter = vec3(
     snoise(nv2),
     snoise(nv2 + vec3( 7.3, 17.1,  3.5)) * 0.9,
     snoise(nv2 + vec3(91.7, 41.3, 13.0))
   );
-  drift += microJitter * 0.012 * layerDriftMul;
+  drift += microJitter * 0.018 * layerDriftMul;
 
-  // Respiration cluster — fréquence boostée
-  drift.y += sin(uTime * 0.85 + cluster)            * 0.009;
-  drift.x += cos(uTime * 0.72 + cluster * 1.21)     * 0.007;
+  // Respiration cluster — fréquence boostée encore
+  drift.y += sin(uTime * 1.05 + cluster)            * 0.011;
+  drift.x += cos(uTime * 0.92 + cluster * 1.21)     * 0.008;
+
+  // ── 2.5 Présence statique — souris immobile mais influente ──────────────
+  // Active dès que la souris est dans la zone (uPresence ≈ 1), indépendamment
+  // de uImpact. Le piège du motif radial est évité par deux mesures :
+  //   (a) boost local du drift idle → les particules sous le curseur s'agitent
+  //       plus, sans direction propre. C'est de l'agitation amplifiée, pas
+  //       un push directionnel — invisible comme champ.
+  //   (b) léger push avec composante 75 % noise per-particule + 25 % outward.
+  //       L'outward seul créerait un trou ; le noise dominant le casse →
+  //       on sent une "tension" locale sans jamais voir un cercle.
+  vec2  fromCursor   = target.xy - uMousePos;
+  float dCursor2     = dot(fromCursor, fromCursor);
+  float proxFalloff  = exp(-dCursor2 * 0.85);                // σ ≈ 1.08 wu — zone tight
+  float prox         = proxFalloff * uPresence;
+
+  // (a) Boost de l'agitation idle locale (×1.0 → ×2.1 sous le curseur)
+  drift *= 1.0 + prox * 1.10;
 
   pos += drift;
 
-  // ── 3. Sillage souris — DIRECTION ONLY, trajectoire organique ────────────
-  // Plus aucune dépendance à la vitesse. uImpact ∈ [0,1] est une intensité
-  // ramp-up/ramp-down stable. La direction de déplacement est composée :
-  //   • base = uMouseDir (axe principal)
-  //   • forwardWave = bruit lent → variation d'amplitude le long de l'axe
-  //   • lateralWave = sin haute fréquence + simplex → zigzag perpendiculaire
-  // → pas de ligne droite ni en sortie ni en retour : trajectoire vivante.
+  // (b) Push proximité — noise dominant pour casser tout motif radial
+  if (prox > 0.001) {
+    float dCursor = sqrt(max(dCursor2, 1e-6));
+    vec2 outwardDir = fromCursor / dCursor;
+    vec2 proxNoise = vec2(
+      snoise(vec3(target.xy * 0.65, uTime * 0.70 + aSeed * 17.3)),
+      snoise(vec3(target.xy * 0.65, uTime * 0.70 + aSeed * 17.3 + 91.7))
+    );
+    // Mix très favorable au noise → pas de cercle visible, juste de la tension
+    vec2 proxDir = outwardDir * 0.25 + proxNoise * 0.85;
+    float proxAmp = prox * 0.16 * (0.78 + aLayer * 0.36);    // parallaxe par couche
+    pos.xy += proxDir * proxAmp;
+    pos.z  += proxNoise.x * prox * 0.045;
+  }
+
+  // ── 3. Sillage souris — micro-explosion contrôlée + zigzag persistant ───
+  // Architecture en trois étages :
+  //   a) Direction de base par-particule : uMouseDir tournée d'un angle unique
+  //      (±0.7 rad) → particules s'éjectent dans des directions légèrement
+  //      différentes → sensation de "balayage explosif", pas de push uniforme.
+  //   b) forwardWave + lateralWave (multi-fréquence) → trajectoire en zigzag
+  //      ample, JAMAIS linéaire.
+  //   c) Amplitude pilotée par uImpact (decay lent) × baseForce élevé →
+  //      particules projetées loin du moule (jusqu'à ~4 wu pour la couche
+  //      avant). Le zigzag persiste pendant tout le voyage retour.
   vec2  toMouse = target.xy - uMousePos;
   float d2      = dot(toMouse, toMouse);
   float falloff = exp(-d2 * 0.55);                          // σ ≈ 1.35 wu
 
-  vec2 baseDir = uMouseDir;
+  // (a) Direction de base par-particule — dispersion latérale d'explosion
+  float dirJitter = (aSeed - 0.5) * 1.4;                    // ±0.7 rad
+  float caJ = cos(dirJitter), saJ = sin(dirJitter);
+  vec2 baseDir = vec2(
+    uMouseDir.x * caJ - uMouseDir.y * saJ,
+    uMouseDir.x * saJ + uMouseDir.y * caJ
+  );
   vec2 perpDir = vec2(-baseDir.y, baseDir.x);
 
-  // Onde latérale multi-fréquences : sin rapide + simplex lent → trajectoire
-  // jamais sinusoïdale pure, jamais répétitive. C'est le zigzag organique.
+  // (b) Onde latérale ample : sin rapide + simplex moyen → zigzag franc
   float lateralWave =
-        sin(uTime * 2.4 + aSeed * 31.0)                                       * 0.55
-      + snoise(vec3(target.xy * 0.5, uTime * 1.7 + aSeed * 12.0))             * 0.85;
+        sin(uTime * 2.4 + aSeed * 31.0)                                       * 0.65
+      + snoise(vec3(target.xy * 0.5, uTime * 1.7 + aSeed * 12.0))             * 0.95;
 
-  // Variation lente de l'amplitude longitudinale → certaines particules
-  // avancent davantage, d'autres moins → variation de direction visible.
+  // Variation longitudinale plus marquée → certaines particules ralentissent,
+  // d'autres accélèrent → la "trajectoire" elle-même varie particule par particule.
   float forwardWave = 0.85
-      + snoise(vec3(target.xy * 0.4, uTime * 0.9 + aSeed * 9.7))              * 0.25;
+      + snoise(vec3(target.xy * 0.4, uTime * 0.9 + aSeed * 9.7))              * 0.35;
 
   vec2 dispDir = baseDir * forwardWave + perpDir * lateralWave;
 
-  // Parallaxe par couche
-  float layerImp = 0.78 + aLayer * 0.36;                    // 0.78 / 1.14 / 1.50
-  // Intensité fixe — ne dépend QUE de uImpact (0-1, indépendant de la vitesse)
-  // Pendant la décroissance de uImpact, lateralWave continue d'osciller →
-  // l'amplitude diminue mais la particule ondule encore → retour zigzag.
-  float baseForce = 0.55;
+  // (c) Amplitude — parallaxe par couche × force élevée
+  float layerImp  = 0.78 + aLayer * 0.36;                   // 0.78 / 1.14 / 1.50
+  float baseForce = 1.40;                                   // 2.5× v5 → projection loin du mot
   float amp       = falloff * uImpact * baseForce * layerImp;
   pos.xy += dispDir * amp;
-  pos.z  += (aSeed - 0.5) * amp * 0.85;
+  // Z modulé : projection 3D pendant l'éjection (lift / push back)
+  pos.z  += (aSeed - 0.5) * amp * 0.95;
 
   // ── 4. Scatter d'entrée — convergence depuis un nuage dispersé ──────────
   float sc = 1.0 - uActive;
@@ -310,14 +347,15 @@ export default function SocialFormation({
   const wasActive = useRef(false)
 
   // ── État du suivi souris ──────────────────────────────────────────────
-  // wakeIntensity remplace smoothSpd : c'est une intensité 0-1 qui ramp-up
-  // dès qu'un mouvement est détecté et décroît dès qu'il s'arrête.
-  // AUCUNE corrélation avec la vitesse : que tu fasses un flick rapide ou
-  // un drag lent, l'intensité du sillage est la même.
+  // Deux intensités distinctes :
+  //   • wakeIntensity (uImpact) — pulse au mouvement, ne dépend PAS de la vitesse
+  //   • presence     (uPresence) — souris simplement présente dans la zone
+  //                                (active même si elle est immobile)
   const prevWorld     = useRef(new THREE.Vector2(9999, 9999))
   const frozenPos     = useRef(new THREE.Vector2(9999, 9999))
   const smoothDir     = useRef(new THREE.Vector2(1, 0))
   const wakeIntensity = useRef(0)
+  const presence      = useRef(0)
 
   // ── Construction du moule : on attend que la fonte soit chargée ──────
   useEffect(() => {
@@ -349,13 +387,14 @@ export default function SocialFormation({
   // ── Uniforms — alloués une fois ───────────────────────────────────────
   const uniforms = useMemo(
     () => ({
-      uTime:     { value: 0 },
-      uActive:   { value: 0 },
-      uHover:    { value: 0 },
-      uColor:    { value: new THREE.Vector3(...link.tint) },
-      uMousePos: { value: new THREE.Vector2(9999, 9999) },
-      uMouseDir: { value: new THREE.Vector2(1, 0) },
-      uImpact:   { value: 0 },                            // 0-1 — ne dépend pas de la vitesse
+      uTime:      { value: 0 },
+      uActive:    { value: 0 },
+      uHover:     { value: 0 },
+      uColor:     { value: new THREE.Vector3(...link.tint) },
+      uMousePos:  { value: new THREE.Vector2(9999, 9999) },
+      uMouseDir:  { value: new THREE.Vector2(1, 0) },
+      uImpact:    { value: 0 },                           // 0-1 — pulse de mouvement
+      uPresence:  { value: 0 },                           // 0-1 — souris simplement présente
     }),
     [link.tint]
   )
@@ -385,8 +424,10 @@ export default function SocialFormation({
       prevWorld.current.set(9999, 9999)
       frozenPos.current.set(9999, 9999)
       wakeIntensity.current = 0
+      presence.current      = 0
       mat.uniforms.uMousePos.value.set(9999, 9999)
-      mat.uniforms.uImpact.value = 0
+      mat.uniforms.uImpact.value   = 0
+      mat.uniforms.uPresence.value = 0
     }
     wasActive.current = isActive
 
@@ -411,6 +452,12 @@ export default function SocialFormation({
 
     const nearWord = mX < 9000
 
+    // Présence : 1 quand la souris est dans la zone, 0 sinon. Indépendant
+    // du mouvement → l'influence statique reste active sur curseur immobile.
+    presence.current = THREE.MathUtils.lerp(
+      presence.current, nearWord ? 1.0 : 0.0, nearWord ? 0.18 : 0.06
+    )
+
     if (nearWord) {
       frozenPos.current.set(mX, mY)
 
@@ -431,27 +478,27 @@ export default function SocialFormation({
           smoothDir.current.x /= sLen
           smoothDir.current.y /= sLen
         }
-        // Ramp-up rapide vers 1.0 — intensité CONSTANTE (pas de Math.min(rawMotion, …))
-        wakeIntensity.current = THREE.MathUtils.lerp(wakeIntensity.current, 1.0, 0.35)
+        // Ramp-up très rapide → "explosion" presque instantanée à l'impact
+        wakeIntensity.current = THREE.MathUtils.lerp(wakeIntensity.current, 1.0, 0.45)
       } else {
-        // Statique sur le mot → on désamorce le sillage, mais doucement →
-        // le zigzag continue d'osciller pendant la décroissance (~0.6 s) →
-        // retour méandré, pas de snap.
-        wakeIntensity.current = THREE.MathUtils.lerp(wakeIntensity.current, 0, 0.04)
+        // Statique sur le mot → désamorçage progressif (~1 s).
+        // Le zigzag continue d'osciller pendant la décroissance car les ondes
+        // latérales du shader sont indépendantes de uImpact.
+        wakeIntensity.current = THREE.MathUtils.lerp(wakeIntensity.current, 0, 0.025)
       }
 
       prevWorld.current.set(mX, mY)
     } else {
-      // Souris hors-zone : même décroissance organique. La direction reste
-      // figée à sa dernière valeur → le sillage continue dans la dernière
-      // direction connue, pendant que l'amplitude s'éteint.
+      // Souris hors-zone — décroissance ~0.85 s. La direction reste figée à
+      // sa dernière valeur → sillage continue dans la dernière direction.
       prevWorld.current.set(9999, 9999)
-      wakeIntensity.current = THREE.MathUtils.lerp(wakeIntensity.current, 0, 0.05)
+      wakeIntensity.current = THREE.MathUtils.lerp(wakeIntensity.current, 0, 0.030)
     }
 
     mat.uniforms.uMousePos.value.set(frozenPos.current.x, frozenPos.current.y)
     mat.uniforms.uMouseDir.value.set(smoothDir.current.x, smoothDir.current.y)
-    mat.uniforms.uImpact.value = wakeIntensity.current
+    mat.uniforms.uImpact.value   = wakeIntensity.current
+    mat.uniforms.uPresence.value = presence.current
   })
 
   // ── Rendu ─────────────────────────────────────────────────────────────
